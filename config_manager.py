@@ -12,6 +12,7 @@
 import json
 from pathlib import Path
 import logging
+from path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,9 @@ class ConfigManager:
         "partial_close_percent": 50      # 分批平仓百分比
     }
     
-    CONFIG_FILE = "terminal_config.json"
+    @staticmethod
+    def get_config_file():
+        return PathManager.get_config_path()
     
     @staticmethod
     def load():
@@ -56,8 +59,9 @@ class ConfigManager:
             dict: 完整的配置字典
         """
         try:
-            if Path(ConfigManager.CONFIG_FILE).exists():
-                with open(ConfigManager.CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config_file = ConfigManager.get_config_file()
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     # 合并默认配置，确保所有键都存在（向后兼容）
                     merged = ConfigManager.DEFAULT_CONFIG.copy()
@@ -83,7 +87,8 @@ class ConfigManager:
             bool: 保存成功返回 True，失败返回 False
         """
         try:
-            with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as f:
+            config_file = ConfigManager.get_config_file()
+            with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
             logger.info("配置已保存")
             return True

@@ -23,6 +23,7 @@ dist/
 *.manifest
 *.exe
 AlphaQuantPro_Portable/
+build_industry/
 Installer/
 
 # IDE

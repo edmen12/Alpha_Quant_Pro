@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
+from path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,13 @@ class DatabaseManager:
         Initialize Database Manager
         
         Args:
-            db_path: Path to SQLite database file (default: terminal_data.db)
+            db_path: Path to SQLite database file (default: AppData/Roaming/workspace/terminal_data.db)
         """
-        self.db_path = db_path if db_path else self.DB_FILE
+        if db_path:
+            self.db_path = db_path
+        else:
+            self.db_path = str(PathManager.get_database_path())
+            
         self._init_db()
         
     def _get_connection(self):

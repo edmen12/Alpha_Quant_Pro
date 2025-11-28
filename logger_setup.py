@@ -14,6 +14,7 @@ import logging.handlers
 import sys
 from pathlib import Path
 import queue
+from path_manager import PathManager
 
 class LoggerSetup:
     """
@@ -46,7 +47,7 @@ class LoggerSetup:
         return logging.getLogger(name)
         
     @staticmethod
-    def setup_logging(app_name="AlphaQuant", log_dir="logs"):
+    def setup_logging(app_name="AlphaQuant", log_dir=None):
         """
         初始化日志系统 (Setup Logging)
         
@@ -57,11 +58,15 @@ class LoggerSetup:
         
         Args:
             app_name (str): 应用名称，用于日志文件命名
-            log_dir (str): 日志文件目录
+            log_dir (str): 日志文件目录，默认为 AppData/Local/logs
         """
         # 创建日志目录
-        log_path = Path(log_dir)
-        log_path.mkdir(exist_ok=True)
+        if log_dir is None:
+            log_path = PathManager.get_logs_dir()
+        else:
+            log_path = Path(log_dir)
+            
+        log_path.mkdir(parents=True, exist_ok=True)
         
         # 根日志记录器
         root_logger = logging.getLogger()

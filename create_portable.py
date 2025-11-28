@@ -26,7 +26,7 @@ os.makedirs(python_dir)
 
 print("2. Copying application files...")
 # Copy source files
-for item in ["agents", "core", "*.py", "*.png", "*.json", "*.db"]:
+for item in ["agents", "core", "*.py", "*.png", "*.json", "*.db", "*.vbs"]:
     if "*" in item:
         import glob
         for file in glob.glob(item):

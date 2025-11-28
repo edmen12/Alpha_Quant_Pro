@@ -4,7 +4,7 @@
 #define MyAppName "Alpha Quant Pro"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "Alpha Quant"
-#define MyAppExeName "Start_AlphaQuant.bat"
+#define MyAppExeName "Launch_AlphaQuant.vbs"
 #define MyAppAssocName MyAppName + " File"
 #define MyAppAssocExt ".aqp"
 #define MyAppAssocKey StringChange(MyAppAssocName, " ", "") + MyAppAssocExt

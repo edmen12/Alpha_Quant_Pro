@@ -25,6 +25,7 @@ from config_manager import ConfigManager
 from database_manager import DatabaseManager
 from news_calendar import NewsCalendar
 from update_checker import UpdateChecker
+from path_manager import PathManager
 
 # Setup Logger
 LoggerSetup.setup_logging()
@@ -896,21 +897,6 @@ class TerminalApple(ctk.CTk):
         
     def _run_engine(self, config):
         try:
-            if not config["bundle"] or config["bundle"] in ["Select Bundle", "No Bundles"]: raise ValueError("Please select or import a valid Agent Bundle.")
-            try:
-                if float(config["lot_size"]) <= 0: raise ValueError
-            except: raise ValueError("Invalid Lot Size.")
-            if config["risk"]:
-                try: float(config["risk"])
-                except: raise ValueError("Invalid Risk %.")
-            bundle_path = Path("agents") / config["bundle"]
-            if not bundle_path.exists(): raise FileNotFoundError(f"Bundle not found: {config['bundle']}")
-            
-            # Dependency Injection
-            db_manager = DatabaseManager()
-            news_calendar = NewsCalendar(buffer_minutes=int(config.get("news_buffer", 30)))
-            
-            # Telegram Notifier
             telegram_notifier = None
             if config.get("telegram_enabled", False):
                 telegram_notifier = TelegramNotifier(
