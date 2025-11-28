@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.db-journal
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.spec
+
+# PyInstaller
+*.manifest
+*.exe
+AlphaQuantPro_Portable/
+Installer/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+terminal_apple_temp.py
+update_dialog_methods.py
+build_log.txt
+setup_config.sed
+sfx_installer.ps1
+temp_package.zip
+innosetup_installer.exe
+
+# User data (should not be in repo)
+terminal_data.db
+terminal_config.json

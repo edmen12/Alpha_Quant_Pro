@@ -1,0 +1,11 @@
+customtkinter
+pandas
+numpy
+matplotlib
+MetaTrader5
+Pillow
+stable-baselines3
+shimmy>=2.0.0
+xgboost
+yfinance
+requests

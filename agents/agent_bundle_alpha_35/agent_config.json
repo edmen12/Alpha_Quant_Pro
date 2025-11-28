@@ -1,0 +1,10 @@
+{
+    "name": "alpha_35",
+    "version": "1.0.0",
+    "description": "Pure XGBoost Agent (Sharpe 7.31 Logic)",
+    "author": "Antigravity",
+    "created_at": "2025-11-26",
+    "type": "hybrid_xgb_rule_based",
+    "input_schema": "feature_schema.json",
+    "output_schema": "model_output"
+}
