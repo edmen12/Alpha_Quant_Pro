@@ -88,6 +88,7 @@ class ConfigManager:
         """
         try:
             config_file = ConfigManager.get_config_file()
+            config_file.parent.mkdir(parents=True, exist_ok=True)
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
             logger.info("配置已保存")

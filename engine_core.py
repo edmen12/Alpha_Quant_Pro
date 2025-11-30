@@ -35,13 +35,14 @@ class TradingEngine:
     5. 智能执行 (Smart Entry, Trailing Stop, Partial Close)
     """
     def __init__(self, bundle_path, symbols=["XAUUSD"], lot_size=0.01, mt5_path=None, 
-                 max_spread=50, max_daily_loss=500.0, min_equity=0,
+                 max_spread=500, max_daily_loss=500.0, min_equity=0,
                  use_risk_based_sizing=False, risk_percent=0.01,
                  news_filter_enabled=False, news_buffer_minutes=30,
                  trailing_enabled=False, trailing_distance=50,
                  partial_close_enabled=False, tp1_distance=50, partial_close_percent=50,
+
                  callback_status=None, db_manager=None, news_calendar=None, telegram_notifier=None,
-                 symbol=None): # Legacy support
+                 symbol=None, timeframe="M15"): # Legacy support
         """
         初始化交易引擎
         
@@ -73,6 +74,8 @@ class TradingEngine:
         self.min_equity = min_equity
         self.use_risk_based_sizing = use_risk_based_sizing
         self.risk_percent = risk_percent
+        self.timeframe = timeframe
+        self.mt5_timeframe = self._get_mt5_timeframe(timeframe)
         
         self.callback_status = callback_status
         self.running = False
@@ -220,7 +223,9 @@ class TradingEngine:
 
     def get_history(self, n=300, symbol=None):
         target_symbol = symbol if symbol else self.symbols[0]
-        rates = mt5.copy_rates_from_pos(target_symbol, mt5.TIMEFRAME_M15, 0, n)
+    def get_history(self, n=300, symbol=None):
+        target_symbol = symbol if symbol else self.symbols[0]
+        rates = mt5.copy_rates_from_pos(target_symbol, self.mt5_timeframe, 0, n)
         if rates is None: return pd.DataFrame()
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
@@ -408,7 +413,7 @@ class TradingEngine:
             
             # Check 1: Spread Filter
             if spread > self.max_spread:
-                self.log(f"❌ Smart Entry: Spread too high for {symbol} ({spread:.1f} > {self.max_spread})")
+                self.log(f"❌ Smart Entry: Spread too high for {symbol} ({spread:.1f} > {self.max_spread}) | Ask: {tick.ask}, Bid: {tick.bid}, Point: {symbol_info.point}")
                 return False
             
             # Check 2: Market Hours (Optional - avoid low liquidity hours)
@@ -840,7 +845,8 @@ class TradingEngine:
 
                         # 4. Generate Signal (Async Inference)
                         # Check for New Bar
-                        rates = await self._run_blocking(mt5.copy_rates_from_pos, symbol, mt5.TIMEFRAME_M15, 0, 1)
+                        # Check for New Bar
+                        rates = await self._run_blocking(mt5.copy_rates_from_pos, symbol, self.mt5_timeframe, 0, 1)
                         if rates is not None:
                             current_bar_time = rates[0]['time']
                             
@@ -859,7 +865,7 @@ class TradingEngine:
                                     model_input = ModelInput(
                                         timestamp=datetime.now(),
                                         symbol=symbol,
-                                        timeframe="M15",
+                                        timeframe=self.timeframe,
                                         price=current_price,
                                         history_candles=df_hist,
                                         candle=df_hist.iloc[-1].to_dict(),
@@ -881,7 +887,13 @@ class TradingEngine:
                                     self.last_signals[symbol] = output.signal
                                     self.last_confs[symbol] = output.confidence
                                     
-                                    self.log(f"[{symbol}] Signal: {output.signal} | Conf: {output.confidence:.2f} | {output.tag}")
+                                    extra_info = ""
+                                    if output.extra:
+                                        p_up = output.extra.get('p_up', 0.0)
+                                        p_down = output.extra.get('p_down', 0.0)
+                                        extra_info = f" | Up: {p_up:.2f} Down: {p_down:.2f}"
+                                    
+                                    self.log(f"[{symbol}] Signal: {output.signal} | Conf: {output.confidence:.2f}{extra_info} | {output.tag}")
                                     
                                     # Execute Trade
                                     if output.signal in ["BUY", "SELL"]:
@@ -955,3 +967,11 @@ class TradingEngine:
     def run(self):
         """Legacy wrapper for threading compatibility (if needed)"""
         asyncio.run(self.run_async())
+
+    def _get_mt5_timeframe(self, tf_str):
+        mapping = {
+            "M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15,
+            "M30": mt5.TIMEFRAME_M30, "H1": mt5.TIMEFRAME_H1, "H4": mt5.TIMEFRAME_H4,
+            "D1": mt5.TIMEFRAME_D1
+        }
+        return mapping.get(tf_str, mt5.TIMEFRAME_M15)

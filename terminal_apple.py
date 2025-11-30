@@ -3,29 +3,103 @@ Alpha Quant Terminal - iOS 26 Concept Edition
 Design Philosophy: "OLED Black", "Super Ellipse", "Floating Interface"
 """
 
-import customtkinter as ctk
-from datetime import datetime
-import threading
-import time
-import json
-from pathlib import Path
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import asyncio
-import pandas as pd
+import os
+import sys
+sys.setrecursionlimit(5000)
 import shutil
-from tkinter import filedialog, messagebox
-import queue
+from pathlib import Path
 
-# Import Core Modules
-from engine_core import TradingEngine
-from telegram_notifier import TelegramNotifier
-from logger_setup import LoggerSetup
-from config_manager import ConfigManager
-from database_manager import DatabaseManager
-from news_calendar import NewsCalendar
-from update_checker import UpdateChecker
-from path_manager import PathManager
+# Fix for embedded Python Tkinter
+# Use AppData for logging to avoid PermissionError in Program Files
+app_data_dir = Path(os.environ.get('LOCALAPPDATA', Path.home())) / "AlphaQuantPro" / "logs"
+app_data_dir.mkdir(parents=True, exist_ok=True)
+log_path = app_data_dir / "debug_log.txt"
+
+with open(log_path, "w") as f:
+    f.write(f"STARTING\n")
+    f.write(f"sys.executable: {sys.executable}\n")
+    
+# Robust Tcl/Tk detection
+if True:
+    with open(log_path, "a") as f:
+        f.write("Inside Frozen Block (Forced)\n")
+    
+    # Try to find tcl relative to executable, or CWD
+    base_dir = Path(sys.executable).parent
+    if not (base_dir / 'tcl').exists():
+        base_dir = Path.cwd()
+        
+    tcl_dir = base_dir / 'tcl'
+    print(f"DEBUG: Checking tcl_dir = {tcl_dir}, exists={tcl_dir.exists()}")
+    if tcl_dir.exists():
+        tcl_lib = next(tcl_dir.glob('tcl8*'), None)
+        tk_lib = next(tcl_dir.glob('tk8*'), None)
+        print(f"DEBUG: tcl_lib={tcl_lib}, tk_lib={tk_lib}")
+        if tcl_lib: 
+            os.environ['TCL_LIBRARY'] = str(tcl_lib)
+            print(f"DEBUG: Set TCL_LIBRARY={os.environ['TCL_LIBRARY']}")
+        if tk_lib: 
+            os.environ['TK_LIBRARY'] = str(tk_lib)
+            print(f"DEBUG: Set TK_LIBRARY={os.environ['TK_LIBRARY']}")
+
+import traceback
+
+try:
+    with open(log_path, "a") as f: f.write("Importing customtkinter...\n")
+    import customtkinter as ctk
+    
+    with open(log_path, "a") as f: f.write("Importing datetime/threading...\n")
+    from datetime import datetime
+    import threading
+    
+    with open(log_path, "a") as f: f.write("Importing LoggerSetup...\n")
+    from logger_setup import LoggerSetup
+    
+    with open(log_path, "a") as f: f.write("Importing ConfigManager...\n")
+    from config_manager import ConfigManager
+    
+    with open(log_path, "a") as f: f.write("Importing DatabaseManager...\n")
+    from database_manager import DatabaseManager
+    
+    with open(log_path, "a") as f: f.write("Importing NewsCalendar...\n")
+    from news_calendar import NewsCalendar
+    
+    with open(log_path, "a") as f: f.write("Importing UpdateChecker...\n")
+    from update_checker import UpdateChecker
+    
+    with open(log_path, "a") as f: f.write("Importing PathManager...\n")
+    from path_manager import PathManager
+    
+    with open(log_path, "a") as f: f.write("Importing TelegramNotifier...\n")
+    from telegram_notifier import TelegramNotifier
+    
+    with open(log_path, "a") as f: f.write("Importing TradingEngine...\n")
+    from engine_core import TradingEngine
+    
+    with open(log_path, "a") as f: f.write("Importing queue/time/asyncio...\n")
+    import queue
+    import time
+    import asyncio
+    
+    with open(log_path, "a") as f: f.write("Importing pandas...\n")
+    import pandas as pd
+    
+    with open(log_path, "a") as f: f.write("Importing matplotlib...\n")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    
+    with open(log_path, "a") as f: f.write("Importing tkinter...\n")
+    from tkinter import messagebox, filedialog
+    
+    with open(log_path, "a") as f: f.write("Imports COMPLETED.\n")
+
+except Exception as e:
+    with open(log_path, "a") as f:
+        f.write(f"\nCRITICAL IMPORT ERROR:\n")
+        f.write(traceback.format_exc())
+        f.write(f"\n")
+    # Re-raise to ensure app crashes visibly if needed, or handle gracefully
+    raise e
 
 # Setup Logger
 LoggerSetup.setup_logging()
@@ -465,8 +539,13 @@ class ViewAnalytics(ctk.CTkFrame):
         app = self.winfo_toplevel()
         if app.engine and app.engine.running:
             # Submit task to engine's executor
-            future = app.engine.executor.submit(self._run_analysis_task)
-            self.after(100, lambda: self._check_analysis_result(future))
+            try:
+                future = app.engine.executor.submit(self._run_analysis_task)
+                self.after(100, lambda: self._check_analysis_result(future))
+            except RuntimeError:
+                # Executor might be shutdown
+                if hasattr(self, 'btn_refresh'):
+                    self.btn_refresh.configure(state="normal", text="Refresh")
         else:
             # Retry later
             if hasattr(self, 'btn_refresh'):
@@ -541,6 +620,26 @@ class ViewAnalytics(ctk.CTkFrame):
 class ViewAgents(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color="transparent")
+        
+        # Resolve agents directory (Frozen vs Dev)
+        if getattr(sys, 'frozen', False):
+            # Frozen: Use AppData for persistence
+            self.agents_dir = Path(os.environ.get('LOCALAPPDATA', Path.home())) / "AlphaQuantPro" / "agents"
+            self.agents_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy built-in agents from MEIPASS if not present
+            try:
+                bundled_agents = Path(sys._MEIPASS) / "agents"
+                if bundled_agents.exists():
+                    for item in bundled_agents.iterdir():
+                        if item.is_dir() and not (self.agents_dir / item.name).exists():
+                            shutil.copytree(item, self.agents_dir / item.name, dirs_exist_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to copy bundled agents: {e}")
+        else:
+            # Dev: Use local agents folder
+            self.agents_dir = Path("agents")
+            
         ctk.CTkLabel(self, text="Configuration", font=DS.font_display_l(), text_color=DS.TEXT_PRIMARY).pack(anchor="w", pady=(0, 30))
         
         # Use Scrollable Frame
@@ -552,6 +651,15 @@ class ViewAgents(ctk.CTkFrame):
         
         self._create_bundle_selector(self.card)
         self.symbol_entry = self._create_input_row(self.card, "Symbols (comma sep)", "XAUUSD")
+        
+        # Timeframe Selector
+        tf_row = ctk.CTkFrame(self.card, fg_color="transparent")
+        tf_row.pack(fill="x", padx=20, pady=15)
+        ctk.CTkLabel(tf_row, text="Timeframe", font=DS.font_body(), text_color=DS.TEXT_PRIMARY).pack(side="left")
+        self.timeframe_var = ctk.StringVar(value="M15")
+        self.timeframe_menu = ctk.CTkOptionMenu(tf_row, variable=self.timeframe_var, values=["M1", "M5", "M15", "M30", "H1", "H4", "D1"], 
+                                                fg_color=DS.BG_ISLAND, button_color=DS.ACCENT_BLUE, width=100)
+        self.timeframe_menu.pack(side="right")
         
         mode_row = ctk.CTkFrame(self.card, fg_color="transparent")
         mode_row.pack(fill="x", padx=20, pady=(15, 5))
@@ -566,7 +674,7 @@ class ViewAgents(ctk.CTkFrame):
         self.risk_row, self.risk_entry = self._create_input_row(self.card, "Risk %", "1.0", return_row=True)
         self._update_inputs("Fixed Lot")
         
-        self.max_spread_entry = self._create_input_row(self.card, "Smart Entry (Max Spread)", "50")
+        self.max_spread_entry = self._create_input_row(self.card, "Smart Entry (Max Spread)", "500")
         self._add_desc(self.card, "Maximum allowed spread in points to enter a trade.")
         
         self.max_loss_entry = self._create_input_row(self.card, "Max Daily Loss", "500")
@@ -606,7 +714,9 @@ class ViewAgents(ctk.CTkFrame):
     def _load_saved_config(self):
         config = ConfigManager.load()
         if config.get("bundle"): self.bundle_var.set(config["bundle"])
+        if config.get("bundle"): self.bundle_var.set(config["bundle"])
         if config.get("symbol"): self.symbol_entry.delete(0, "end"); self.symbol_entry.insert(0, config["symbol"])
+        if config.get("timeframe"): self.timeframe_var.set(config["timeframe"])
         if config.get("mt5"): 
             self.mt5_var.set(config["mt5"])
             if config["mt5"] != "auto":
@@ -672,7 +782,7 @@ class ViewAgents(ctk.CTkFrame):
             self.risk_entry.configure(state="normal", fg_color=DS.BG_MAIN)
 
     def _refresh_bundles(self):
-        agents_dir = Path("agents")
+        agents_dir = self.agents_dir
         if not agents_dir.exists(): bundles = ["No Bundles"]
         else: bundles = [d.name for d in agents_dir.iterdir() if d.is_dir() and d.name.startswith("agent_bundle")]
         if not bundles: bundles = ["No Bundles"]
@@ -686,7 +796,7 @@ class ViewAgents(ctk.CTkFrame):
             if not src.name.startswith("agent_bundle"):
                 messagebox.showerror("Error", "Folder must start with 'agent_bundle'")
                 return
-            dest = Path("agents") / src.name
+            dest = self.agents_dir / src.name
             if dest.exists():
                 if not messagebox.askyesno("Exists", "Overwrite?"): return
                 shutil.rmtree(dest)
@@ -704,7 +814,9 @@ class ViewAgents(ctk.CTkFrame):
         risk_val = self.risk_entry.get() if mode == "Risk %" else "0"
         return {
             "bundle": self.bundle_var.get(),
+            "bundle": self.bundle_var.get(),
             "symbol": self.symbol_entry.get(),
+            "timeframe": self.timeframe_var.get(),
             "lot_size": self.lot_entry.get(),
             "risk": risk_val,
             "mt5": self.mt5_var.get(),
@@ -834,8 +946,31 @@ class TerminalApple(ctk.CTk):
         self.telegram = TelegramNotifier()
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self._init_ui()
         self._check_for_updates()
+
+    def on_closing(self):
+        """Handle application shutdown"""
+        try:
+            # Stop Engine
+            if self.engine:
+                self.engine.stop()
+            
+            # Stop Telegram
+            if hasattr(self, 'telegram') and self.telegram:
+                if hasattr(self.telegram, 'stop_command_listener'):
+                    self.telegram.stop_command_listener()
+            
+            # Destroy Window
+            self.destroy()
+            
+            # Force Kill (to ensure all threads die)
+            import os
+            os._exit(0)
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+            sys.exit(1)
         
     def _init_ui(self):
         self.views = {}
@@ -911,8 +1046,22 @@ class TerminalApple(ctk.CTk):
             else:
                 symbols = [symbols_str.strip()]
 
+            # Define bundle path
+            if config["bundle"] == "Select Bundle":
+                raise ValueError("Please select a valid Agent Bundle in Settings.")
+                
+            # Use the same agents directory as the ViewAgents (where we copied them)
+            bundle_path = self.views["agents"].agents_dir / config["bundle"]
+            
+            # Initialize Managers
+            self.db_manager = DatabaseManager()
+            self.news_calendar = NewsCalendar()
+
             self.engine = TradingEngine(
                 bundle_path=str(bundle_path),
+                db_manager=self.db_manager,
+                news_calendar=self.news_calendar,
+                telegram_notifier=telegram_notifier if 'telegram_notifier' in locals() else None,
                 symbols=symbols,
                 lot_size=float(config["lot_size"]),
                 mt5_path=config["mt5"] if config["mt5"] != "auto" else None,
@@ -928,10 +1077,7 @@ class TerminalApple(ctk.CTk):
                 partial_close_enabled=config.get("partial_close_enabled", False),
                 tp1_distance=int(config.get("tp1_distance", 50)),
                 partial_close_percent=float(config.get("partial_close_percent", 50)),
-                callback_status=self._on_status_update,
-                db_manager=db_manager,
-                news_calendar=news_calendar,
-                telegram_notifier=telegram_notifier
+                callback_status=self._on_status_update
             )
             # Run Async Engine
             loop = asyncio.new_event_loop()
@@ -940,8 +1086,9 @@ class TerminalApple(ctk.CTk):
             loop.close()
             
             # self.engine.start() # Legacy Thread Start
-            # self.after(0, lambda: self.views["dashboard"].status_badge.configure(text="● ENGINE ACTIVE", text_color=DS.ACCENT_BLUE))
-            # self.after(0, lambda: self.btn_stop.configure(state="normal"))
+            self.after(0, lambda: self.views["dashboard"].status_badge.configure(text="● ENGINE ACTIVE", text_color=DS.ACCENT_BLUE))
+            self.after(0, lambda: self.btn_stop.configure(state="normal"))
+
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Engine Start Error: {error_msg}")

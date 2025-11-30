@@ -22,6 +22,10 @@ def check_and_install_dependencies(bundle_path: Path):
     Args:
         bundle_path: Path to agent bundle
     """
+    if getattr(sys, 'frozen', False):
+        logger.info(f"Running in frozen mode, skipping dependency check for '{bundle_path.name}'")
+        return
+
     req_file = Path(bundle_path) / "requirements.txt"
     
     if not req_file.exists():

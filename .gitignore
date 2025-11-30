@@ -2,53 +2,38 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
+
+# Distribution / Packaging
+build/
+dist/
+Installer/
+*.spec
+!AlphaQuantPro.spec
 
 # Logs
-logs/
 *.log
+*_log.txt
+logs/
+startup_log.txt
 
 # Database
 *.db
-*.db-journal
+*.sqlite3
 
-# Build artifacts
-build/
-dist/
-*.egg-info/
-*.spec
-
-# PyInstaller
-*.manifest
-*.exe
-AlphaQuantPro_Portable/
-build_industry/
-Installer/
-
-# IDE
+# VS Code
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
 
-# OS
-.DS_Store
-Thumbs.db
+# Environment variables
+.env
+
+# Local configuration
+terminal_config.json
 
 # Temporary files
-*.tmp
-*.bak
-*.old
-terminal_apple_temp.py
-update_dialog_methods.py
-build_log.txt
+*_temp.py
+debug_adapter.txt
 setup_config.sed
-sfx_installer.ps1
-temp_package.zip
-innosetup_installer.exe
 
-# User data (should not be in repo)
-terminal_data.db
-terminal_config.json
+# Nuitka
+build_industry/
+cachedir/

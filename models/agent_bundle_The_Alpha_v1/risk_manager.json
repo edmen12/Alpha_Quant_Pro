@@ -1,0 +1,30 @@
+{
+  "description": "XAUUSD Hybrid Risk Control Configuration",
+  "version": "1.0.0",
+  "signal_filters": {
+    "dead_zone_threshold": 0.60,
+    "comment": "低于此概率强制空仓。实盘初期建议 0.60，激进可降至 0.55"
+  },
+  "trend_filters": {
+    "enabled": true,
+    "indicator": "ema",
+    "period": 200,
+    "regime_rules": {
+      "bull_market": "allow_all",
+      "bear_market": "block_long",
+      "comment": "价格<EMA200时进入熊市模式，禁止开多单，只允许做空或空仓"
+    }
+  },
+  "execution_limits": {
+    "max_positions": 1,
+    "cooldown_candles": 4,
+    "comment": "平仓后 N 根 K 线内禁止同向开仓 (防磨损)"
+  },
+  "volatility_settings": {
+    "use_atr_sl": true,
+    "atr_period": 14,
+    "sl_multiplier": 1.5,
+    "tp_multiplier": 3.0,
+    "comment": "此配置需同步给 EA 或由 Python 计算后写入 CSV"
+  }
+}

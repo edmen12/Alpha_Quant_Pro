@@ -9,3 +9,4 @@ shimmy>=2.0.0
 xgboost
 yfinance
 requests
+onnxruntime

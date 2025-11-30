@@ -37,6 +37,9 @@ class DatabaseManager:
         else:
             self.db_path = str(PathManager.get_database_path())
             
+        # Ensure directory exists
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+            
         self._init_db()
         
     def _get_connection(self):
