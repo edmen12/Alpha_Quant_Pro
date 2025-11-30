@@ -1,4 +1,0 @@
-xgboost
-yfinance
-pandas
-numpy
