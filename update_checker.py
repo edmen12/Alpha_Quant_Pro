@@ -46,12 +46,9 @@ class UpdateChecker:
                     self.latest_version = data["tag_name"].lstrip("v")
                     self.changelog = data.get("body", "")
                     
-                    # 获取 setup.exe 下载链接
-                    assets = data.get("assets", [])
-                    for asset in assets:
-                        if "Setup" in asset["name"] and asset["name"].endswith(".exe"):
-                            self.download_url = asset["browser_download_url"]
-                            break
+                    # Use Release Page URL so user can see instructions for split installer
+                    self.download_url = data.get("html_url", "")
+
                     
                     # 比较版本
                     if version.parse(self.latest_version) > version.parse(self.current_version):
