@@ -783,6 +783,37 @@ class TradingEngine:
             
         return await self._run_blocking(_calc)
 
+    async def check_risk_limits(self):
+        """
+        Check global risk limits (Equity Guard, Max Daily Loss)
+        Returns:
+            bool: True if safe to continue, False if hard stop triggered
+        """
+        try:
+            # 1. Equity Guard
+            if self.min_equity > 0:
+                account = await self._run_blocking(mt5.account_info)
+                if account and account.equity < self.min_equity:
+                    logger.info(f"EQUITY GUARD TRIGGERED: ${account.equity:.2f} < ${self.min_equity:.2f}")
+                    self.send_alert(f"🚨 EQUITY GUARD TRIGGERED\nEquity: ${account.equity:.2f}\nMin: ${self.min_equity:.2f}\nAction: Closing All Positions")
+                    await self._run_blocking(self.close_all_positions)
+                    return False
+
+            # 2. Max Daily Loss
+            if self.max_daily_loss > 0:
+                current_daily_pnl = await self._run_blocking(self.get_daily_pnl)
+                if current_daily_pnl < -self.max_daily_loss:
+                    logger.info(f"MAX DAILY LOSS TRIGGERED: PnL ${current_daily_pnl:.2f} < -${self.max_daily_loss:.2f}")
+                    self.send_alert(f"🚨 MAX DAILY LOSS TRIGGERED\nPnL: ${current_daily_pnl:.2f}\nLimit: -${self.max_daily_loss:.2f}\nAction: Closing All Positions & Stopping")
+                    await self._run_blocking(self.close_all_positions)
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.log(f"Risk Check Error: {e}")
+            return True # Don't stop on error, but log it
+
     async def run_async(self):
         """Async Main Loop (Multi-Symbol)"""
         self.running = True
@@ -819,14 +850,11 @@ class TradingEngine:
                             await asyncio.sleep(5)
                             continue
                     
-                    # Global Account Checks (Equity Guard)
-                    account = await self._run_blocking(mt5.account_info)
-                    if account and self.min_equity > 0 and account.equity < self.min_equity:
-                        logger.info(f"EQUITY GUARD TRIGGERED: ${account.equity:.2f} < ${self.min_equity:.2f}")
-                        self.send_alert(f"🚨 EQUITY GUARD TRIGGERED\nEquity: ${account.equity:.2f}\nMin: ${self.min_equity:.2f}\nAction: Closing All Positions")
-                        await self._run_blocking(self.close_all_positions) # Closes ALL symbols
+                    # Global Risk Checks
+                    if not await self.check_risk_limits():
                         self.running = False
                         break
+
 
                     # --- Iterate over ALL symbols ---
                     for symbol in self.symbols:

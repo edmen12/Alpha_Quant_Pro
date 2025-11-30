@@ -60,6 +60,7 @@ trading_terminal/           # 📦 完全独立的交易终端
 - 动态加载各种策略
 - 自动管理依赖
 - 向后兼容旧格式
+- **[📚 查看详细开发指南 (AGENT_BUNDLE_GUIDE.md)](AGENT_BUNDLE_GUIDE.md)**
 
 ### 5. 📋 交易历史
 - 完整交易记录

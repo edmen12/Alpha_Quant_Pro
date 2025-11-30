@@ -37,3 +37,10 @@ setup_config.sed
 # Nuitka
 build_industry/
 cachedir/
+
+# Proprietary Assets (Models & Agents)
+*.onnx
+*.pth
+*.pt
+models/
+agents/
