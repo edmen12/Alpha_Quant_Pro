@@ -147,5 +147,25 @@ Agent bundles 应放在：
 
 ---
 
-**版本**: 1.0.0  
-**最后更新**: 2025-11-26
+## 📦 安装说明 (v1.3.3)
+
+由于 GitHub 文件大小限制，安装包被分为两部分。请按照以下步骤安装：
+
+1.  **下载所有 3 个文件** (从 Releases 页面)：
+    - `AlphaQuantPro_Setup.part1`
+    - `AlphaQuantPro_Setup.part2`
+    - `MERGE_INSTALLER.bat`
+2.  **将它们放在同一个文件夹中**。
+3.  **双击运行** `MERGE_INSTALLER.bat`。
+    - 脚本会自动合并生成 `AlphaQuantPro_Setup.exe`。
+4.  **运行** 生成的 `AlphaQuantPro_Setup.exe` 进行安装。
+
+## ⚠️ 关于 Agent Bundles
+
+出于商业机密保护，本仓库**不包含**核心策略模型 (`agents/` 和 `models/` 目录)。
+请联系管理员获取授权的策略包，并将其放入安装目录下的 `agents/` 文件夹中。
+
+---
+
+**版本**: 1.3.3
+**最后更新**: 2025-11-30
