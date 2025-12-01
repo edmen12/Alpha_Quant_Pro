@@ -19,6 +19,11 @@ log_path = app_data_dir / "debug_log.txt"
 with open(log_path, "w") as f:
     f.write(f"STARTING\n")
     f.write(f"sys.executable: {sys.executable}\n")
+
+# Redirect stdout/stderr to log file in frozen mode to capture crashes
+if getattr(sys, 'frozen', False):
+    sys.stdout = open(log_path, "a", buffering=1)
+    sys.stderr = open(log_path, "a", buffering=1)
     
 # Robust Tcl/Tk detection
 if True:
@@ -1355,6 +1360,13 @@ class TerminalApple(ctk.CTk):
                     # Set Auth Token
                     ngrok_token = config.get("ngrok_token", "")
                     if ngrok_token:
+                        # Configure to hide console window on Windows
+                        if sys.platform == "win32":
+                            import subprocess
+                            startupinfo = subprocess.STARTUPINFO()
+                            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                            conf.get_default().startupinfo = startupinfo
+
                         conf.get_default().auth_token = ngrok_token
                         
                     # Kill existing tunnels to avoid conflicts

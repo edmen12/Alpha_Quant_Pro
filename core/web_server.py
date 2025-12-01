@@ -1,4 +1,5 @@
 import threading
+import sys
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Request, status
 from fastapi.staticfiles import StaticFiles
@@ -385,8 +386,14 @@ def run_server(engine_instance, host="0.0.0.0", port=8000):
     trading_engine = engine_instance
     
     # Determine path to web_ui
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    web_ui_dir = os.path.join(os.path.dirname(current_dir), "web_ui")
+    if getattr(sys, 'frozen', False):
+        # Frozen: Use sys._MEIPASS
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        web_ui_dir = os.path.join(base_dir, "web_ui")
+    else:
+        # Dev: Relative to this file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        web_ui_dir = os.path.join(os.path.dirname(current_dir), "web_ui")
     
     if not os.path.exists(web_ui_dir):
         os.makedirs(web_ui_dir, exist_ok=True)
@@ -404,9 +411,14 @@ def run_server(engine_instance, host="0.0.0.0", port=8000):
     
     logger.info(f"Starting Web Server on {host}:{port}")
     
-    config = uvicorn.Config(app, host=host, port=port, log_level="error")
-    server_instance = uvicorn.Server(config)
-    server_instance.run()
+    try:
+        config = uvicorn.Config(app, host=host, port=port, log_level="info")
+        server_instance = uvicorn.Server(config)
+        server_instance.run()
+    except Exception as e:
+        logger.error(f"CRITICAL: Web Server Failed to Start: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 def start_background_server(engine_instance, port=8000):
     global server_thread, server_instance

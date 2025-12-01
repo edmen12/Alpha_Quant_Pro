@@ -66,10 +66,17 @@ class PerformanceAnalyzer:
                     if self.symbol and d.symbol != self.symbol:
                         continue
                         
+                    # Filter out non-trading deals (Balance, Credit, etc.)
+                    if d.type not in [0, 1]: # 0=BUY, 1=SELL
+                        continue
+
                     trades.append({
                         'ticket': d.ticket,
                         'time': datetime.fromtimestamp(d.time),
-                        'type': 'BUY' if d.type == 0 else 'SELL',
+                        # Logic Inversion for DEAL_ENTRY_OUT:
+                        # Closing Deal is SELL (1) -> Original Trade was BUY
+                        # Closing Deal is BUY (0)  -> Original Trade was SELL
+                        'type': 'BUY' if d.type == 1 else 'SELL',
                         'volume': d.volume,
                         'price': d.price,
                         'profit': d.profit,
