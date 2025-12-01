@@ -38,15 +38,20 @@ class ConfigManager:
         "news_buffer": 30,               # 新闻缓冲时间（分钟）
         "trailing_enabled": False,       # 追踪止损开关
         "trailing_distance": 50,         # 追踪距离（点）
-        "partial_close_enabled": False,  # 分批止盈开关
-        "tp1_distance": 50,              # TP1 触发距离（点）
-        "partial_close_percent": 50      # 分批平仓百分比
+        "partial_close_percent": 50,     # 分批平仓百分比
+        "telegram_enabled": False,       # Telegram 通知开关
+        "telegram_token": "",            # Telegram Bot Token
+        "telegram_chat_id": "",          # Telegram Chat ID
+        "web_enabled": False,            # Web 远程监控开关
+        "web_password": "",              # Web Dashboard 密码
+        "ngrok_enabled": False,          # Ngrok 自动穿透开关
+        "ngrok_token": ""                # Ngrok Auth Token
     }
     
     @staticmethod
     def get_config_file():
         return PathManager.get_config_path()
-    
+
     @staticmethod
     def load():
         """

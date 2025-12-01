@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alpha Quant Pro - Dashboard</title>
+    <link rel="icon" href="data:,">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #000000;
+            --bg-sidebar: #1c1c1e;
+            --bg-card: #1c1c1e;
+            --text-primary: #ffffff;
+            --text-secondary: #8e8e93;
+            --accent-blue: #0a84ff;
+            --accent-green: #30d158;
+            --accent-red: #ff453a;
+            --accent-orange: #ff9f0a;
+            --accent-purple: #bf5af2;
+            --border-color: #38383a;
+            --input-bg: #2c2c2e;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* UTILS */
+        .hidden {
+            display: none !important;
+        }
+
+        .text-green {
+            color: var(--accent-green);
+        }
+
+        .text-red {
+            color: var(--accent-red);
+        }
+
+        .text-blue {
+            color: var(--accent-blue);
+        }
+
+        .text-purple {
+            color: var(--accent-purple);
+        }
+
+        .blur-bg {
+            background: rgba(28, 28, 30, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+
+        /* LOGIN */
+        #login-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .login-card {
+            width: 320px;
+            padding: 40px;
+            border-radius: 20px;
+            text-align: left;
+            border: 1px solid #333;
+        }
+
+        .login-input {
+            width: 100%;
+            padding: 12px;
+            margin: 20px 0;
+            background: #333;
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 16px;
+            text-align: left;
+            box-sizing: border-box;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .btn-primary:active {
+            opacity: 0.7;
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* SIDEBAR */
+        #sidebar {
+            width: 250px;
+            background: var(--bg-sidebar);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            border-right: 1px solid #333;
+            margin-bottom: 8px;
+            border-radius: 10px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-weight: 500;
+            transition: 0.2s;
+            gap: 10px;
+        }
+
+        .nav-item {
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: 0.2s;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        .nav-item.active {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .nav-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* MAIN CONTENT */
+        #main-content {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        header {
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot.green {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .dot.red {
+            background: var(--accent-red);
+        }
+
+        /* CARDS */
+        .card {
+            background: var(--bg-card);
+            border-radius: 18px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 15px;
+            border-radius: 12px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .stat-val {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        /* ANALYTICS */
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        /* LOGS */
+        #log-container {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            color: #ccc;
+            height: 500px;
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 12px;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 2px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-info {
+            color: var(--text-primary);
+        }
+
+        .log-error {
+            color: var(--accent-red);
+        }
+
+        .log-warn {
+            color: var(--accent-orange);
+        }
+
+        /* SETTINGS */
+        .settings-group {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .setting-header {
+            padding: 15px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+
+        .setting-row.sub-setting {
+            padding-left: 30px;
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .sub-label {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .setting-input {
+            background: transparent;
+            border: none;
+            color: white;
+            text-align: right;
+            font-size: 16px;
+        }
+
+        .setting-input.small {
+            width: 80px;
+            border-bottom: 1px solid #333;
+            text-align: center;
+            margin-right: 10px;
+        }
+
+        .setting-input:focus {
+            outline: none;
+            border-bottom-color: var(--accent-blue);
+        }
+
+        .setting-input:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .toggle-switch {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 50px;
+            height: 30px;
+            background: #39393D;
+            border-radius: 15px;
+            position: relative;
+            cursor: pointer;
+            transition: 0.3s;
+            outline: none;
+        }
+
+        .toggle-switch:checked {
+            background: var(--accent-green);
+        }
+
+        .toggle-switch::before {
+            content: '';
+            position: absolute;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: white;
+            top: 2px;
+            left: 2px;
+            transition: 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-switch:checked::before {
+            transform: translateX(20px);
+        }
+
+        /* CUSTOM DROPDOWN */
+        .custom-select {
+            position: relative;
+            width: 100px;
+            font-family: inherit;
+        }
+
+        .select-selected {
+            background-color: var(--input-bg);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .select-selected:after {
+            content: "";
+            width: 0;
+            height: 0;
+            border: 5px solid transparent;
+            border-color: #fff transparent transparent transparent;
+            margin-left: 8px;
+            margin-top: 4px;
+        }
+
+        .select-selected.select-arrow-active:after {
+            border-color: transparent transparent #fff transparent;
+            margin-top: -4px;
+        }
+
+        .select-items {
+            position: absolute;
+            background-color: #2c2c2e;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 999;
+            border-radius: 8px;
+            margin-top: 4px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            border: 1px solid #38383a;
+        }
+
+        .select-items div {
+            color: white;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .select-items div:hover {
+            background-color: var(--accent-blue);
+        }
+
+        .select-hide {
+            display: none;
+        }
+
+        /* SEGMENTED CONTROL */
+        .segmented-control {
+            display: flex;
+            background: #2c2c2e;
+            padding: 2px;
+            border-radius: 8px;
+            width: 200px;
+        }
+
+        .segment-btn {
+            flex: 1;
+            padding: 6px;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: 0.2s;
+        }
+
+        .segment-btn.active {
+            background: #636366;
+            color: white;
+            font-weight: 600;
+        }
+
+        /* TOAST NOTIFICATION */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 50px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        #toast.show {
+            visibility: visible;
+            animation: fadein 0.5s, fadeout 0.5s 2.5s;
+        }
+
+        @keyframes fadein {
+            from {
+                bottom: 0;
+                opacity: 0;
+            }
+
+            to {
+                bottom: 30px;
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeout {
+            from {
+                bottom: 30px;
+                opacity: 1;
+            }
+
+            to {
+                bottom: 0;
+                opacity: 0;
+            }
+        }
+
+        /* MOBILE OPTIMIZATION */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+
+            #sidebar {
+                width: 100% !important;
+                height: 70px !important;
+                flex-direction: row !important;
+                justify-content: space-around !important;
+                padding: 5px 10px !important;
+                margin: 0 !important;
+                border-right: none !important;
+                border-top: 1px solid #333 !important;
+                position: fixed !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                z-index: 9999 !important;
+                background: var(--bg-sidebar) !important;
+                box-sizing: border-box !important;
+                border-radius: 0 !important;
+            }
+
+            .brand {
+                display: none !important;
+            }
+
+            .nav-item {
+                flex-direction: column !important;
+                font-size: 10px !important;
+                gap: 4px !important;
+                padding: 6px 4px !important;
+                min-width: 60px !important;
+                justify-content: center !important;
+                border-radius: 8px !important;
+            }
+
+            #main-content {
+                padding-bottom: 90px !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            .card {
+                padding: 15px !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- LOGIN -->
+    <div id="login-screen">
+        <div class="login-card blur-bg">
+            <h2 style="margin-top:0; margin-bottom: 5px;">Alpha Quant</h2>
+            <p style="color:var(--text-secondary); font-size:14px; margin-top:0; margin-bottom: 30px;">Remote Access</p>
+            <input type="password" id="pwd-input" class="login-input" placeholder="Enter Password">
+            <button class="btn-primary" onclick="login()">Unlock</button>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast">
+        <span id="toast-icon">✅</span>
+        <span id="toast-msg">Saved Successfully</span>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div id="sidebar" class="hidden">
+        <div class="brand" style="font-weight:700; font-size:18px; padding:10px;">Alpha Quant.</div>
+
+        <div class="nav-item active" onclick="switchView('dashboard')">
+            <span class="nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                </svg>
+            </span>
+            Dashboard
+        </div>
+
+        <div class="nav-item" onclick="switchView('analytics')">
+            <span class="nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+            </span>
+            Analytics
+        </div>
+
+        <div class="nav-item" onclick="switchView('logs')">
+            <span class="nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+            </span>
+            Logs
+        </div>
+
+        <div class="nav-item" onclick="switchView('settings')">
+            <span class="nav-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path
+                        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                    </path>
+                </svg>
+            </span>
+            Settings
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div id="main-content" class="hidden">
+        <header>
+            <h1 id="page-title">Dashboard</h1>
+            <div class="status-badge">
+                <div id="status-dot" class="dot red"></div>
+                <span id="status-text">STOPPED</span>
+            </div>
+        </header>
+
+        <!-- DASHBOARD -->
+        <div id="view-dashboard" class="view-section">
+            <div class="card blur-bg" style="text-align:center; padding: 40px 0;">
+                <div style="font-size:13px; color:var(--text-secondary); letter-spacing:1px; margin-bottom:10px">DAILY
+                    P&L (FLOATING)</div>
+                <div id="total-pnl" style="font-size:48px; font-weight:700;">$0.00</div>
+                <div id="realized-pnl" style="font-size:14px; color:var(--text-secondary); margin-top:5px">REALIZED:
+                    $0.00</div>
+            </div>
+
+            <div class="stats-grid" style="margin-bottom:20px">
+                <div class="stat-box">
+                    <div class="stat-label">EQUITY</div>
+                    <div id="equity-val" class="stat-val">$0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">BALANCE</div>
+                    <div id="balance-val" class="stat-val">$0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">PRICE</div>
+                    <div id="price-val" class="stat-val">$0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">CONFIDENCE</div>
+                    <div id="conf-val" class="stat-val">0.0%</div>
+                </div>
+            </div>
+
+            <!-- POSITIONS LIST -->
+            <div class="card blur-bg">
+                <div style="font-size:13px; color:var(--text-secondary); letter-spacing:1px; margin-bottom:10px">OPEN
+                    POSITIONS</div>
+                <div id="pos-list">
+                    <div style="text-align:center; color:var(--text-secondary); padding:20px">No Open Positions</div>
+                </div>
+            </div>
+
+            <button id="btn-toggle" class="btn-primary" style="background:var(--accent-green)"
+                onclick="toggleEngine()">START ENGINE</button>
+        </div>
+
+        <!-- ANALYTICS VIEW -->
+        <div id="view-analytics" class="view-section hidden">
+            <div class="card blur-bg">
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="stat-label">WIN RATE</div>
+                        <div id="ana-winrate" class="stat-val">0.0%</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">PROFIT FACTOR</div>
+                        <div id="ana-pf" class="stat-val">0.00</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">SHARPE</div>
+                        <div id="ana-sharpe" class="stat-val">0.00</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">MAX DD</div>
+                        <div id="ana-dd" class="stat-val">0.0%</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- LOGS VIEW -->
+        <div id="view-logs" class="view-section hidden">
+            <div id="log-container"></div>
+        </div>
+
+        <!-- SETTINGS VIEW -->
+        <div id="view-settings" class="view-section hidden">
+            <div class="settings-group">
+                <div class="setting-header">General</div>
+                <div class="setting-row">
+                    <span>Symbol</span>
+                    <input id="conf-symbol" class="setting-input" value="XAUUSD">
+                </div>
+                <div class="setting-row">
+                    <span>Timeframe</span>
+                    <div class="custom-select">
+                        <div class="select-selected" onclick="toggleSelect('timeframe')">M15</div>
+                        <div class="select-items select-hide">
+                            <div onclick="selectItem('timeframe', 'M1')">M1</div>
+                            <div onclick="selectItem('timeframe', 'M5')">M5</div>
+                            <div onclick="selectItem('timeframe', 'M15')">M15</div>
+                            <div onclick="selectItem('timeframe', 'H1')">H1</div>
+                            <div onclick="selectItem('timeframe', 'H4')">H4</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="setting-header">Risk Management</div>
+                <div class="setting-row">
+                    <span>Sizing Mode</span>
+                    <div class="segmented-control">
+                        <div id="mode-fixed" class="segment-btn active" onclick="setSizingMode('fixed')">Fixed Lot</div>
+                        <div id="mode-risk" class="segment-btn" onclick="setSizingMode('risk')">Risk %</div>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <span>Fixed Lot Size</span>
+                    <input id="conf-lot" class="setting-input" type="number" step="0.01" value="0.1">
+                </div>
+                <div class="setting-row">
+                    <span>Risk Per Trade (%)</span>
+                    <input id="conf-risk" class="setting-input" type="number" step="0.1" value="1.0" disabled>
+                </div>
+                <div class="setting-row">
+                    <span>Max Daily Loss ($)</span>
+                    <input id="conf-max-loss" class="setting-input" type="number" step="10" value="500">
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <div class="setting-header">Strategy Parameters</div>
+                <div class="setting-row">
+                    <span>News Filter</span>
+                    <input id="conf-news" type="checkbox" class="toggle-switch">
+                </div>
+                <div class="setting-row sub-setting">
+                    <span class="sub-label">Buffer (min)</span>
+                    <input id="conf-news-buffer" class="setting-input small" type="number" value="30">
+                </div>
+                <div class="setting-row">
+                    <span>Trailing Stop</span>
+                    <input id="conf-trailing" type="checkbox" class="toggle-switch">
+                </div>
+                <div class="setting-row sub-setting">
+                    <span class="sub-label">Distance (pips)</span>
+                    <input id="conf-trailing-dist" class="setting-input small" type="number" value="20">
+                </div>
+                <div class="setting-row">
+                    <span>Partial Close</span>
+                    <input id="conf-partial" type="checkbox" class="toggle-switch">
+                </div>
+                <div class="setting-row sub-setting">
+                    <span class="sub-label">Close %</span>
+                    <input id="conf-partial-pct" class="setting-input small" type="number" value="50">
+                </div>
+                <div class="setting-row sub-setting">
+                    <span class="sub-label">TP1 Distance (pips)</span>
+                    <input id="conf-tp1-dist" class="setting-input small" type="number" value="30">
+                </div>
+            </div>
+
+            <button class="btn-primary" onclick="saveSettings()">Save Configuration</button>
+        </div>
+    </div>
+
+    <script>
+        // 自动适配 ngrok 或 localhost
+        const API_URL = window.location.origin + '/api';
+        let token = localStorage.getItem('token');
+        let isRunning = false;
+        let chartInstance = null;
+        let currentTimeframe = 'M15';
+        let currentSizingMode = 'fixed';
+
+        // Init
+        if (token) {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('sidebar').classList.remove('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+            fetchStatus();
+            setInterval(fetchStatus, 1000);
+        }
+
+        async function login() {
+            const pwd = document.getElementById('pwd-input').value;
+            if (!pwd) return alert('Please enter password');
+
+            try {
+                const res = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pwd })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    token = data.token;
+                    localStorage.setItem('token', token);
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('sidebar').classList.remove('hidden');
+                    document.getElementById('main-content').classList.remove('hidden');
+                    fetchStatus();
+                    setInterval(fetchStatus, 1000);
+                } else {
+                    alert('Invalid Password');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Login Error');
+            }
+        }
+
+        function switchView(viewName) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
+
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            // Find nav item (simple hack)
+            const navItems = document.querySelectorAll('.nav-item');
+            if (viewName === 'dashboard') navItems[0].classList.add('active');
+            if (viewName === 'analytics') {
+                navItems[1].classList.add('active');
+                fetchAnalytics();
+            }
+            if (viewName === 'logs') {
+                navItems[2].classList.add('active');
+                fetchLogs();
+            }
+            if (viewName === 'settings') {
+                navItems[3].classList.add('active');
+                loadSettings();
+            }
+        }
+
+        async function fetchStatus() {
+            if (!token) return;
+            try {
+                const res = await fetch(`${API_URL}/status`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (res.status === 401) {
+                    localStorage.removeItem('token');
+                    location.reload();
+                    return;
+                }
+
+                const data = await res.json();
+                const posList = document.getElementById('pos-list');
+                if (data.positions && data.positions.length > 0) {
+                    posList.innerHTML = data.positions.map(p => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:12px;">
+                    <div style="font-weight:600;"><span style="color:${p.type === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${p.type}</span> ${p.symbol}</div>
+                    <div style="color:var(--text-secondary);">${p.volume} lots</div>
+                    <div style="font-weight:600; color:${p.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">$${p.profit.toFixed(2)}</div>
+                    <button onclick="closeTrade(${p.ticket}, '${p.symbol}')" style="background:var(--accent-red); color:white; border:none; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px; font-weight:600;">CLOSE</button>
+                </div>
+            `).join('');
+                } else {
+                    posList.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:20px">No Open Positions</div>';
+                }
+
+                // Confidence Update
+                const confEl = document.getElementById('conf-val');
+                if (data.confidence !== undefined) {
+                    confEl.innerText = `${(data.confidence * 100).toFixed(1)}%`;
+                    if (data.confidence > 0.7) confEl.style.color = 'var(--accent-green)';
+                    else if (data.confidence < 0.3) confEl.style.color = 'var(--accent-red)';
+                    else confEl.style.color = 'var(--text-primary)';
+                }
+
+                const pnlEl = document.getElementById('total-pnl');
+                pnlEl.innerText = `$${data.daily_pnl.toFixed(2)}`;
+                pnlEl.style.color = data.daily_pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+
+                const realizedEl = document.getElementById('realized-pnl');
+                if (realizedEl && data.total_profit !== undefined) {
+                    realizedEl.innerText = `REALIZED: $${data.total_profit.toFixed(2)}`;
+                }
+
+                document.getElementById('equity-val').innerText = `$${data.equity.toFixed(2)}`;
+                document.getElementById('balance-val').innerText = `$${data.balance.toFixed(2)}`;
+                document.getElementById('price-val').innerText = `$${data.price.toFixed(2)}`;
+
+                isRunning = data.running;
+                const statusDot = document.getElementById('status-dot');
+                const statusText = document.getElementById('status-text');
+                const btnToggle = document.getElementById('btn-toggle');
+
+                if (isRunning) {
+                    statusDot.className = 'dot green';
+                    statusText.innerText = 'RUNNING';
+                    btnToggle.innerText = 'STOP ENGINE';
+                    btnToggle.style.background = 'var(--accent-red)';
+                } else {
+                    statusDot.className = 'dot red';
+                    statusText.innerText = 'STOPPED';
+                    btnToggle.innerText = 'START ENGINE';
+                    btnToggle.style.background = 'var(--accent-green)';
+                }
+            } catch (e) {
+                console.error('Status fetch error', e);
+            }
+        }
+
+        async function fetchAnalytics() {
+            if (!token) return;
+            try {
+                const res = await fetch(`${API_URL}/analytics`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+
+                document.getElementById('ana-winrate').innerText = `${data.win_rate.toFixed(1)}%`;
+                document.getElementById('ana-pf').innerText = data.profit_factor.toFixed(2);
+                document.getElementById('ana-sharpe').innerText = data.sharpe_ratio.toFixed(2);
+                document.getElementById('ana-dd').innerText = `${data.max_drawdown.toFixed(1)}%`;
+
+                const curve = data.equity_curve || { times: [], equity: [] };
+                renderChart(curve.equity || [], curve.times || []);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function fetchLogs() {
+            if (!token) return;
+            try {
+                const res = await fetch(`${API_URL}/logs`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                const container = document.getElementById('log-container');
+
+                if (data.logs && Array.isArray(data.logs)) {
+                    container.innerHTML = data.logs.map(l => {
+                        let cls = 'log-info';
+                        if (l.includes('ERROR') || l.includes('CRITICAL')) cls = 'log-error';
+                        else if (l.includes('WARNING')) cls = 'log-warn';
+                        return `<div class="log-entry ${cls}">${l}</div>`;
+                    }).join('');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function renderChart(dataPoints, labels) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            const chartLabels = (labels && labels.length === dataPoints.length) ? labels : dataPoints.map((_, i) => i);
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: 'Equity',
+                        data: dataPoints,
+                        borderColor: '#30d158',
+                        backgroundColor: 'rgba(48, 209, 88, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#8e8e93' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function toggleEngine() {
+            const endpoint = isRunning ? '/stop' : '/start';
+            try {
+                await fetch(`${API_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                fetchStatus();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function closeTrade(ticket, symbol) {
+            if (!confirm(`Close trade ${ticket} (${symbol})?`)) return;
+            try {
+                const res = await fetch(`${API_URL}/close_trade`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ ticket: parseInt(ticket), symbol: symbol })
+                });
+                if (res.ok) {
+                    showToast("Trade Closed");
+                    fetchStatus();
+                } else {
+                    const err = await res.json();
+                    alert(`Failed: ${err.detail}`);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Close Request Failed');
+            }
+        }
+
+        async function loadSettings() {
+            try {
+                const res = await fetch(`${API_URL}/config`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const conf = await res.json();
+
+                document.getElementById('conf-symbol').value = conf.symbol || 'XAUUSD';
+                // Timeframe
+                currentTimeframe = conf.timeframe || 'M15';
+                document.querySelector('.select-selected').innerText = currentTimeframe;
+
+                // Sizing
+                currentSizingMode = conf.risk_mode || 'fixed';
+                setSizingMode(currentSizingMode);
+                document.getElementById('conf-lot').value = conf.fixed_lot || 0.1;
+                document.getElementById('conf-risk').value = conf.risk_percent || 1.0;
+                document.getElementById('conf-max-loss').value = conf.max_daily_loss || 500;
+
+                // Strategy
+                document.getElementById('conf-news').checked = conf.news_filter || false;
+                document.getElementById('conf-news-buffer').value = conf.news_buffer || 30;
+                document.getElementById('conf-trailing').checked = conf.trailing_enabled || false;
+                document.getElementById('conf-trailing-dist').value = conf.trailing_distance || 20;
+                document.getElementById('conf-partial').checked = conf.partial_close_enabled || false;
+                document.getElementById('conf-partial-pct').value = conf.partial_close_percent || 50;
+                document.getElementById('conf-tp1-dist').value = conf.tp1_distance || 30;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function saveSettings() {
+            const config = {
+                symbol: document.getElementById('conf-symbol').value,
+                timeframe: currentTimeframe,
+                risk_mode: currentSizingMode,
+                fixed_lot: parseFloat(document.getElementById('conf-lot').value),
+                risk_percent: parseFloat(document.getElementById('conf-risk').value),
+                max_daily_loss: parseFloat(document.getElementById('conf-max-loss').value),
+                news_filter: document.getElementById('conf-news').checked,
+                news_buffer: parseInt(document.getElementById('conf-news-buffer').value),
+                trailing_enabled: document.getElementById('conf-trailing').checked,
+                trailing_distance: parseInt(document.getElementById('conf-trailing-dist').value),
+                partial_close_enabled: document.getElementById('conf-partial').checked,
+                partial_close_percent: parseFloat(document.getElementById('conf-partial-pct').value),
+                tp1_distance: parseInt(document.getElementById('conf-tp1-dist').value)
+            };
+
+            try {
+                await fetch(`${API_URL}/config`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(config)
+                });
+                showToast();
+            } catch (e) {
+                console.error(e);
+                alert('Failed to save settings');
+            }
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            if (msg) document.getElementById('toast-msg').innerText = msg;
+            t.className = 'show';
+            setTimeout(() => { t.className = t.className.replace('show', ''); }, 3000);
+        }
+
+        function setSizingMode(mode) {
+            currentSizingMode = mode;
+            document.getElementById('mode-fixed').className = mode === 'fixed' ? 'segment-btn active' : 'segment-btn';
+            document.getElementById('mode-risk').className = mode === 'risk' ? 'segment-btn active' : 'segment-btn';
+
+            document.getElementById('conf-lot').disabled = (mode === 'risk');
+            document.getElementById('conf-risk').disabled = (mode === 'fixed');
+        }
+
+        // Custom Select Logic
+        function toggleSelect(id) {
+            const items = document.querySelector('.select-items');
+            items.classList.toggle('select-hide');
+            document.querySelector('.select-selected').classList.toggle('select-arrow-active');
+        }
+
+        function selectItem(type, val) {
+            if (type === 'timeframe') {
+                currentTimeframe = val;
+                document.querySelector('.select-selected').innerText = val;
+                document.querySelector('.select-items').classList.add('select-hide');
+            }
+        }
+
+        // Close select if clicked outside
+        document.addEventListener('click', function (e) {
+            if (!e.target.matches('.select-selected')) {
+                const items = document.querySelector('.select-items');
+                if (items && !items.classList.contains('select-hide')) {
+                    items.classList.add('select-hide');
+                    document.querySelector('.select-selected').classList.remove('select-arrow-active');
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -46,11 +46,11 @@ class NewsCalendar:
         """
         try:
             url = "https://www.forexfactory.com/calendar"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            # Use cloudscraper to bypass Cloudflare
+            import cloudscraper
+            scraper = cloudscraper.create_scraper()
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = scraper.get(url, timeout=15)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -152,6 +152,7 @@ class NewsCalendar:
             return None
         
         now = datetime.now(pytz.UTC)
+        upcoming = [e for e in self.events if e['time'] > now]
         if upcoming:
             return min(upcoming, key=lambda x: x['time'])
         return None

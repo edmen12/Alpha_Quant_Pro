@@ -8,6 +8,7 @@ import sys
 sys.setrecursionlimit(5000)
 import shutil
 from pathlib import Path
+import core.web_server
 
 # Fix for embedded Python Tkinter
 # Use AppData for logging to avoid PermissionError in Program Files
@@ -42,64 +43,62 @@ if True:
             os.environ['TK_LIBRARY'] = str(tk_lib)
             print(f"DEBUG: Set TK_LIBRARY={os.environ['TK_LIBRARY']}")
 
-import traceback
+    import traceback
 
-try:
-    with open(log_path, "a") as f: f.write("Importing customtkinter...\n")
-    import customtkinter as ctk
-    
-    with open(log_path, "a") as f: f.write("Importing datetime/threading...\n")
-    from datetime import datetime
-    import threading
-    
-    with open(log_path, "a") as f: f.write("Importing LoggerSetup...\n")
-    from logger_setup import LoggerSetup
-    
-    with open(log_path, "a") as f: f.write("Importing ConfigManager...\n")
-    from config_manager import ConfigManager
-    
-    with open(log_path, "a") as f: f.write("Importing DatabaseManager...\n")
-    from database_manager import DatabaseManager
-    
-    with open(log_path, "a") as f: f.write("Importing NewsCalendar...\n")
-    from news_calendar import NewsCalendar
-    
-    with open(log_path, "a") as f: f.write("Importing UpdateChecker...\n")
-    from update_checker import UpdateChecker
-    
-    with open(log_path, "a") as f: f.write("Importing PathManager...\n")
-    from path_manager import PathManager
-    
-    with open(log_path, "a") as f: f.write("Importing TelegramNotifier...\n")
-    from telegram_notifier import TelegramNotifier
-    
-    with open(log_path, "a") as f: f.write("Importing TradingEngine...\n")
-    from engine_core import TradingEngine
-    
-    with open(log_path, "a") as f: f.write("Importing queue/time/asyncio...\n")
-    import queue
-    import time
-    import asyncio
-    
-    with open(log_path, "a") as f: f.write("Importing pandas...\n")
-    import pandas as pd
-    
-    with open(log_path, "a") as f: f.write("Importing matplotlib...\n")
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    
-    with open(log_path, "a") as f: f.write("Importing tkinter...\n")
-    from tkinter import messagebox, filedialog
-    
-    with open(log_path, "a") as f: f.write("Imports COMPLETED.\n")
+    try:
+        with open(log_path, "a") as f: f.write("Importing customtkinter...\n")
+        import customtkinter as ctk
 
-except Exception as e:
-    with open(log_path, "a") as f:
-        f.write(f"\nCRITICAL IMPORT ERROR:\n")
-        f.write(traceback.format_exc())
-        f.write(f"\n")
-    # Re-raise to ensure app crashes visibly if needed, or handle gracefully
-    raise e
+        with open(log_path, "a") as f: f.write("Importing LoggerSetup...\n")
+        from logger_setup import LoggerSetup
+        
+        with open(log_path, "a") as f: f.write("Importing ConfigManager...\n")
+        from config_manager import ConfigManager
+        
+        with open(log_path, "a") as f: f.write("Importing DatabaseManager...\n")
+        from database_manager import DatabaseManager
+        
+        with open(log_path, "a") as f: f.write("Importing NewsCalendar...\n")
+        from news_calendar import NewsCalendar
+        
+        with open(log_path, "a") as f: f.write("Importing UpdateChecker...\n")
+        from update_checker import UpdateChecker
+        
+        with open(log_path, "a") as f: f.write("Importing PathManager...\n")
+        from path_manager import PathManager
+        
+        with open(log_path, "a") as f: f.write("Importing TelegramNotifier...\n")
+        from telegram_notifier import TelegramNotifier
+        
+        with open(log_path, "a") as f: f.write("Importing TradingEngine...\n")
+        from engine_core import TradingEngine
+        from performance_analyzer import PerformanceAnalyzer
+        
+        with open(log_path, "a") as f: f.write("Importing queue/time/asyncio/threading...\n")
+        import queue
+        import time
+        import asyncio
+        import threading
+        
+        with open(log_path, "a") as f: f.write("Importing pandas...\n")
+        import pandas as pd
+        
+        with open(log_path, "a") as f: f.write("Importing matplotlib...\n")
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        
+        with open(log_path, "a") as f: f.write("Importing tkinter...\n")
+        from tkinter import messagebox, filedialog
+        
+        with open(log_path, "a") as f: f.write("Imports COMPLETED.\n")
+
+    except Exception as e:
+        with open(log_path, "a") as f:
+            f.write(f"\nCRITICAL IMPORT ERROR:\n")
+            f.write(traceback.format_exc())
+            f.write(f"\n")
+        # Re-raise to ensure app crashes visibly if needed, or handle gracefully
+        raise e
 
 # Setup Logger
 LoggerSetup.setup_logging()
@@ -435,6 +434,8 @@ class ViewDashboard(ctk.CTkFrame):
                 app.engine.close_all_positions()
 
 class ViewLogs(ctk.CTkFrame):
+    MAX_LOG_LINES = 1000  # 最大日志行数，防止内存泄漏
+    
     def __init__(self, parent):
         super().__init__(parent, fg_color="transparent")
         
@@ -442,12 +443,27 @@ class ViewLogs(ctk.CTkFrame):
         header.pack(fill="x", pady=(0, 20))
         ctk.CTkLabel(header, text="System Logs", font=DS.font_display_l(), text_color=DS.TEXT_PRIMARY).pack(side="left")
         
+        # 添加清空日志按钮
+        self.btn_clear = ctk.CTkButton(header, text="Clear Logs", width=100, height=32,
+                                      fg_color=DS.BG_ISLAND, hover_color="#3A3A3C",
+                                      font=ctk.CTkFont(size=12, weight="bold"),
+                                      command=self._clear_logs)
+        self.btn_clear.pack(side="right")
+        
         self.log_text = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Consolas", size=12),
                                      fg_color=DS.BG_ISLAND, text_color=DS.TEXT_SECONDARY)
         self.log_text.pack(fill="both", expand=True)
         self.log_text.configure(state="disabled")
         
+        self.log_line_count = 0  # 追踪日志行数
         self._poll_logs()
+
+    def _clear_logs(self):
+        """清空日志显示"""
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+        self.log_text.configure(state="disabled")
+        self.log_line_count = 0
 
     def _poll_logs(self):
         try:
@@ -459,6 +475,14 @@ class ViewLogs(ctk.CTkFrame):
                 
                 self.log_text.configure(state="normal")
                 self.log_text.insert("end", formatted)
+                self.log_line_count += 1
+                
+                # 限制日志行数，删除旧日志
+                if self.log_line_count > self.MAX_LOG_LINES:
+                    # 删除最旧的100行，避免频繁删除
+                    self.log_text.delete("1.0", "101.0")
+                    self.log_line_count -= 100
+                
                 self.log_text.see("end")
                 self.log_text.configure(state="disabled")
         except queue.Empty:
@@ -537,55 +561,50 @@ class ViewAnalytics(ctk.CTkFrame):
             self.btn_refresh.configure(state="disabled", text="Loading...")
             
         app = self.winfo_toplevel()
-        if app.engine and app.engine.running:
+        if hasattr(app, 'engine') and app.engine and app.engine.running:
             # Submit task to engine's executor
             try:
-                future = app.engine.executor.submit(self._run_analysis_task)
+                # Pass engine instance to the task
+                future = app.engine.executor.submit(self._run_analysis_task, app.engine)
                 self.after(100, lambda: self._check_analysis_result(future))
             except RuntimeError:
                 # Executor might be shutdown
                 if hasattr(self, 'btn_refresh'):
                     self.btn_refresh.configure(state="normal", text="Refresh")
         else:
-            # Retry later
-            if hasattr(self, 'btn_refresh'):
-                self.btn_refresh.configure(state="normal", text="Refresh")
+            # Retry later if engine not running
             self.refresh_timer = self.after(5000, self._refresh_metrics)
 
-    def _run_analysis_task(self):
-        """Run analysis in background thread"""
-        try:
-            app = self.winfo_toplevel()
-            # 1. Fetch history using Engine's method (running in executor)
-            history = app.engine.get_trade_history(days=30)
-            
-            from performance_analyzer import PerformanceAnalyzer
-            analyzer = PerformanceAnalyzer(symbol=None)
-            
-            # 2. Pass history to analyzer
-            return {
-                'metrics': analyzer.get_all_metrics(days=30, trades_list=history),
-                'curve': analyzer.get_equity_curve(days=30, trades_list=history)
-            }
-        except Exception as e:
-            logger.error(f"[Analytics] Task Error: {e}")
-            return {'metrics': {}, 'curve': {}}
-
     def _check_analysis_result(self, future):
-        """Check if analysis is complete"""
         if future.done():
             try:
                 data = future.result()
                 self._update_ui_with_data(data)
             except Exception as e:
                 logger.error(f"Analysis Task Failed: {e}")
-            
-            self.btn_refresh.configure(state="normal", text="Refresh")
-            # Schedule next refresh
-            self.refresh_timer = self.after(30000, self._refresh_metrics) # Refresh every 30s
+            finally:
+                if hasattr(self, 'btn_refresh'):
+                    self.btn_refresh.configure(state="normal", text="Refresh")
+                # Schedule next refresh
+                self.refresh_timer = self.after(30000, self._refresh_metrics)
         else:
             # Keep checking
             self.after(100, lambda: self._check_analysis_result(future))
+
+    def _run_analysis_task(self, engine):
+        # This runs in background thread
+        try:
+            # Use cached sync method from engine
+            return engine.get_analytics_sync(30)
+        except Exception as e:
+            logger.error(f"Analysis Calculation Error: {e}")
+            return {
+                'metrics': {
+                    'win_rate': 0.0, 'profit_factor': 0.0, 'sharpe_ratio': 0.0,
+                    'max_drawdown': 0.0, 'total_trades': 0, 'avg_duration': 0.0
+                },
+                'curve': {'times': [], 'equity': []}
+            }
 
     def _update_ui_with_data(self, data):
         """Update UI elements with fetched data"""
@@ -623,19 +642,27 @@ class ViewAgents(ctk.CTkFrame):
         
         # Resolve agents directory (Frozen vs Dev)
         if getattr(sys, 'frozen', False):
-            # Frozen: Use AppData for persistence
-            self.agents_dir = Path(os.environ.get('LOCALAPPDATA', Path.home())) / "AlphaQuantPro" / "agents"
-            self.agents_dir.mkdir(parents=True, exist_ok=True)
+            # Frozen: Check for "agents" folder next to the executable first (Portable Mode)
+            exe_dir = Path(sys.executable).parent
+            local_agents = exe_dir / "agents"
             
-            # Copy built-in agents from MEIPASS if not present
-            try:
-                bundled_agents = Path(sys._MEIPASS) / "agents"
-                if bundled_agents.exists():
-                    for item in bundled_agents.iterdir():
-                        if item.is_dir() and not (self.agents_dir / item.name).exists():
-                            shutil.copytree(item, self.agents_dir / item.name, dirs_exist_ok=True)
-            except Exception as e:
-                logger.error(f"Failed to copy bundled agents: {e}")
+            if local_agents.exists():
+                self.agents_dir = local_agents
+                logger.info(f"Using portable agents directory: {self.agents_dir}")
+            else:
+                # Fallback: Use AppData for persistence
+                self.agents_dir = Path(os.environ.get('LOCALAPPDATA', Path.home())) / "AlphaQuantPro" / "agents"
+                self.agents_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Copy built-in agents from MEIPASS if not present (and if they exist in bundle)
+                try:
+                    bundled_agents = Path(sys._MEIPASS) / "agents"
+                    if bundled_agents.exists():
+                        for item in bundled_agents.iterdir():
+                            if item.is_dir() and not (self.agents_dir / item.name).exists():
+                                shutil.copytree(item, self.agents_dir / item.name, dirs_exist_ok=True)
+                except Exception as e:
+                    logger.error(f"Failed to copy bundled agents: {e}")
         else:
             # Dev: Use local agents folder
             self.agents_dir = Path("agents")
@@ -810,27 +837,107 @@ class ViewAgents(ctk.CTkFrame):
             self.mt5_var.set(filename)
 
     def get_config(self):
-        mode = self.mode_var.get()
-        risk_val = self.risk_entry.get() if mode == "Risk %" else "0"
         return {
             "bundle": self.bundle_var.get(),
-            "bundle": self.bundle_var.get(),
             "symbol": self.symbol_entry.get(),
-            "timeframe": self.timeframe_var.get(),
+            "timeframe": self.timeframe_menu.get(),
             "lot_size": self.lot_entry.get(),
-            "risk": risk_val,
-            "mt5": self.mt5_var.get(),
-            "max_spread": self.max_spread_entry.get(),
+            "risk": self.risk_entry.get(),
             "max_loss": self.max_loss_entry.get(),
+            "max_daily_loss": self.max_loss_entry.get(),
             "min_equity": self.min_equity_entry.get(),
+            "mt5": self.mt5_var.get(),
             "news_filter": self.news_filter_var.get(),
-            "news_buffer": self.news_buffer_entry.get(),
             "trailing_enabled": self.trailing_var.get(),
-            "trailing_distance": self.trailing_distance_entry.get(),
             "partial_close_enabled": self.partial_close_var.get(),
+            "max_spread": self.max_spread_entry.get(),
+            "news_buffer": self.news_buffer_entry.get(),
+            "trailing_distance": self.trailing_distance_entry.get(),
             "tp1_distance": self.tp1_distance_entry.get(),
-            "partial_close_percent": self.partial_close_percent_entry.get()
+            "partial_close_percent": self.partial_close_percent_entry.get(),
+            "risk_mode": "risk" if self.risk_entry.cget("state") == "normal" else "fixed"
         }
+
+    def validate_config(self, config):
+        """
+        验证配置有效性
+        Returns: (bool, str) - (是否有效, 错误信息)
+        """
+        # 1. Bundle检查
+        if not config.get("bundle") or config["bundle"] == "Select Bundle":
+            return False, "请选择一个有效的 Agent Bundle"
+        
+        # 2. Symbol检查
+        symbol = config.get("symbol", "").strip()
+        if not symbol:
+            return False, "请输入交易品种（如 XAUUSD）"
+        
+        # 3. 数字参数验证
+        try:
+            lot_size = float(config["lot_size"])
+            if lot_size <= 0 or lot_size > 100:
+                return False, f"手数必须在 0.01 - 100 之间（当前: {lot_size}）"
+        except ValueError:
+            return False, f"手数必须是数字（当前: {config['lot_size']}）"
+        
+        try:
+            risk = float(config["risk"])
+            if risk < 0 or risk > 100:
+                return False, f"风险百分比必须在 0 - 100 之间（当前: {risk}）"
+        except ValueError:
+            return False, f"风险百分比必须是数字（当前: {config['risk']}）"
+        
+        try:
+            max_spread = int(config["max_spread"])
+            if max_spread <= 0:
+                return False, f"最大点差必须大于 0（当前: {max_spread}）"
+        except ValueError:
+            return False, f"最大点差必须是整数（当前: {config['max_spread']}）"
+        
+        try:
+            max_loss = float(config["max_loss"])
+            if max_loss < 0:
+                return False, f"最大亏损不能为负数（当前: {max_loss}）"
+        except ValueError:
+            return False, f"最大亏损必须是数字（当前: {config['max_loss']}）"
+        
+        try:
+            min_equity = float(config["min_equity"])
+            if min_equity < 0:
+                return False, f"最小权益不能为负数（当前: {min_equity}）"
+        except ValueError:
+            return False, f"最小权益必须是数字（当前: {config['min_equity']}）"
+        
+        try:
+            news_buffer = int(config["news_buffer"])
+            if news_buffer < 0 or news_buffer > 120:
+                return False, f"新闻缓冲时间必须在 0 - 120 分钟之间（当前: {news_buffer}）"
+        except ValueError:
+            return False, f"新闻缓冲时间必须是整数（当前: {config['news_buffer']}）"
+        
+        try:
+            trailing_dist = int(config["trailing_distance"])
+            if trailing_dist < 0:
+                return False, f"追踪距离不能为负数（当前: {trailing_dist}）"
+        except ValueError:
+            return False, f"追踪距离必须是整数（当前: {config['trailing_distance']}）"
+        
+        try:
+            tp1_dist = int(config["tp1_distance"])
+            if tp1_dist <= 0:
+                return False, f"TP1 距离必须大于 0（当前: {tp1_dist}）"
+        except ValueError:
+            return False, f"TP1 距离必须是整数（当前: {config['tp1_distance']}）"
+        
+        try:
+            partial_pct = float(config["partial_close_percent"])
+            if partial_pct <= 0 or partial_pct > 100:
+                return False, f"分批平仓百分比必须在 1 - 100 之间（当前: {partial_pct}）"
+        except ValueError:
+            return False, f"分批平仓百分比必须是数字（当前: {config['partial_close_percent']}）"
+        
+        return True, ""
+
 
 class ViewSettings(ctk.CTkFrame):
     def __init__(self, parent):
@@ -844,10 +951,11 @@ class ViewSettings(ctk.CTkFrame):
         
         ctk.CTkLabel(self.card, text="TELEGRAM NOTIFICATIONS", font=ctk.CTkFont(size=12, weight="bold"), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(20, 10))
         self.sw_enable = ctk.CTkSwitch(self.card, text="Enable Notifications", progress_color=DS.ACCENT_PURPLE, command=self._toggle_telegram)
-        self.sw_enable.pack(anchor="w", padx=20, pady=(0, 10))
+        self.sw_enable.pack(anchor="w", padx=20, pady=(0, 10), fill="x")
         self.token_entry = self._create_input(self.card, "Bot Token")
         self.chat_entry = self._create_input(self.card, "Chat ID")
-        
+
+        # Telegram Test & Info
         btn_row = ctk.CTkFrame(self.card, fg_color="transparent")
         btn_row.pack(fill="x", padx=20, pady=10)
         self.btn_test = CapsuleButton(btn_row, "Test Connection", color=DS.ACCENT_PURPLE, width=150, command=self._test_tg)
@@ -855,6 +963,23 @@ class ViewSettings(ctk.CTkFrame):
         
         info_text = "配置说明：\n1. 在 Telegram 搜索 @BotFather，创建新机器人获取 Bot Token\n2. 向机器人发送任意消息激活\n3. 在 Telegram 搜索 @userinfobot，获取您的 Chat ID"
         ctk.CTkLabel(self.card, text=info_text, font=DS.font_body(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=10)
+        
+        ctk.CTkLabel(self.card, text="REMOTE ACCESS SECURITY", font=ctk.CTkFont(size=12, weight="bold"), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(32, 10))
+        
+        self.sw_web_enable = ctk.CTkSwitch(self.card, text="Enable Web Dashboard", progress_color=DS.ACCENT_BLUE, command=self._toggle_web)
+        self.sw_web_enable.pack(anchor="w", padx=20, pady=(0, 10), fill="x")
+        
+        self.web_password_entry = self._create_input(self.card, "Web Dashboard Password")
+        
+        ctk.CTkLabel(self.card, text="REMOTE TUNNEL (NGROK)", font=ctk.CTkFont(size=12, weight="bold"), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(32, 10))
+        self.sw_ngrok_enable = ctk.CTkSwitch(self.card, text="Enable Ngrok Tunnel", progress_color=DS.ACCENT_ORANGE, command=self._toggle_ngrok)
+        self.sw_ngrok_enable.pack(anchor="w", padx=20, pady=(0, 10), fill="x")
+        self.ngrok_token_entry = self._create_input(self.card, "Ngrok Auth Token")
+        
+        ngrok_info = "配置说明：\n1. 访问 dashboard.ngrok.com 注册/登录\n2. 在左侧菜单找到 'Your Authtoken'\n3. 复制 Token 并粘贴到上方输入框\n4. 开启开关后，公网链接将自动发送到您的 Telegram\n⚠️ 注意：必须先配置并开启上方的 Telegram 通知"
+        ctk.CTkLabel(self.card, text=ngrok_info, font=DS.font_body(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=(5, 20))
+        
+        self._load_saved_config()
 
     def _create_input(self, parent, placeholder):
         entry = ctk.CTkEntry(parent, placeholder_text=placeholder, height=40, fg_color=DS.BG_MAIN, border_color="#333", font=DS.font_input_mono())
@@ -877,18 +1002,83 @@ class ViewSettings(ctk.CTkFrame):
         app = self.winfo_toplevel()
         if hasattr(app, 'telegram'):
             if self.sw_enable.get():
-                token = self.token_entry.get()
-                chat = self.chat_entry.get()
-                if token and chat:
-                    app.telegram.configure(token, chat)
-                    app.telegram.enable()
-                    app.telegram.start_command_listener(app._handle_telegram_command)
-                else:
+                token = self.token_entry.get().strip()
+                chat = self.chat_entry.get().strip()
+                if not token or not chat:
                     self.sw_enable.deselect()
-                    messagebox.showwarning("Config", "Please enter Token and Chat ID")
+                    messagebox.showwarning("配置缺失", "请先填写 Bot Token 和 Chat ID\n\n提示：\n1. 搜索 @BotFather 创建机器人获取 Token\n2. 搜索 @userinfobot 获取 Chat ID")
+                    return
+                app.telegram.configure(token, chat)
+                app.telegram.enable()
+                app.telegram.start_command_listener(app._handle_telegram_command)
+                logger.info("Telegram notifications enabled")
             else:
                 app.telegram.disable()
-                if hasattr(app.telegram, 'stop_command_listener'): app.telegram.stop_command_listener()
+                logger.info("Telegram notifications disabled")
+
+    def _toggle_web(self):
+        password = self.web_password_entry.get().strip()
+        if self.sw_web_enable.get():
+            if not password:
+                messagebox.showwarning("安全警告", "Web Dashboard 需要设置密码\n\n密码用于保护您的远程访问安全")
+                self.sw_web_enable.deselect()
+                return
+            
+            if len(password) < 6:
+                messagebox.showwarning("密码太弱", "密码长度至少为 6 位\n\n建议使用包含数字和字母的组合")
+                self.sw_web_enable.deselect()
+                return
+            
+            # Register Callbacks
+            app = self.winfo_toplevel()
+            core.web_server.get_config_callback = app._get_web_config
+            core.web_server.set_config_callback = lambda c: app.after(0, app._set_web_config, c)
+            
+            # Start Server
+            if hasattr(app, 'engine'):
+                core.web_server.set_password(password)
+                core.web_server.start_background_server(app.engine)
+                logger.info("Web Dashboard enabled on port 8000")
+            else:
+                # Engine might not be initialized yet, will start when engine starts
+                logger.info("Web Dashboard will start with engine")
+        else:
+            core.web_server.stop_background_server()
+            logger.info("Web Dashboard disabled")
+
+    def _toggle_ngrok(self):
+        if self.sw_ngrok_enable.get():
+            token = self.ngrok_token_entry.get().strip()
+            if not token:
+                messagebox.showwarning("配置缺失", "请填写 Ngrok Auth Token\n\n您可以从 dashboard.ngrok.com 获取免费 Token")
+                self.sw_ngrok_enable.deselect()
+                return
+            logger.info("Ngrok tunnel enabled")
+        else:
+            logger.info("Ngrok tunnel disabled")
+
+    def _load_saved_config(self):
+        config = ConfigManager.load()
+        if config.get("telegram_token"): self.token_entry.delete(0, "end"); self.token_entry.insert(0, config["telegram_token"])
+        if config.get("telegram_chat_id"): self.chat_entry.delete(0, "end"); self.chat_entry.insert(0, config["telegram_chat_id"])
+        if config.get("telegram_enabled"): self.sw_enable.select()
+        
+        if config.get("web_enabled"): self.sw_web_enable.select()
+        if config.get("web_password"): self.web_password_entry.delete(0, "end"); self.web_password_entry.insert(0, config["web_password"])
+        
+        if config.get("ngrok_enabled"): self.sw_ngrok_enable.select()
+        if config.get("ngrok_token"): self.ngrok_token_entry.delete(0, "end"); self.ngrok_token_entry.insert(0, config["ngrok_token"])
+
+    def get_config(self):
+        return {
+            "telegram_enabled": self.sw_enable.get(),
+            "telegram_token": self.token_entry.get(),
+            "telegram_chat_id": self.chat_entry.get(),
+            "web_enabled": self.sw_web_enable.get(),
+            "web_password": self.web_password_entry.get(),
+            "ngrok_enabled": self.sw_ngrok_enable.get(),
+            "ngrok_token": self.ngrok_token_entry.get()
+        }
 
 class ViewChart(ctk.CTkFrame):
     def __init__(self, parent):
@@ -941,43 +1131,23 @@ class TerminalApple(ctk.CTk):
         self.title("Alpha Quant Pro - iOS 26")
         self.geometry("1400x900")
         self.configure(fg_color=DS.BG_MAIN)
-        self.engine = None
-        self.last_chart_update = 0
-        self.telegram = TelegramNotifier()
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self._init_ui()
-        self._check_for_updates()
-
-    def on_closing(self):
-        """Handle application shutdown"""
-        try:
-            # Stop Engine
-            if self.engine:
-                self.engine.stop()
-            
-            # Stop Telegram
-            if hasattr(self, 'telegram') and self.telegram:
-                if hasattr(self.telegram, 'stop_command_listener'):
-                    self.telegram.stop_command_listener()
-            
-            # Destroy Window
-            self.destroy()
-            
-            # Force Kill (to ensure all threads die)
-            import os
-            os._exit(0)
-        except Exception as e:
-            print(f"Error during shutdown: {e}")
-            sys.exit(1)
         
-    def _init_ui(self):
+        # Initialize state
         self.views = {}
         self.current_view = None
+        self.current_view_name = None
+        self.engine = None # Initialize engine to None
+        self.last_chart_update = 0 # Initialize chart update timer
+            # Stop Engine
         self.sidebar = ctk.CTkFrame(self, width=300, fg_color=DS.BG_MAIN, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=30, pady=30)
-        self.sidebar.grid_propagate(False)
+        # self.sidebar.grid_propagate(False) # Removed to allow vertical expansion
+        
+        # FIX: Configure grid weights to allow main content to expand
+        self.grid_columnconfigure(0, minsize=300) # Enforce sidebar width
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        
         ctk.CTkLabel(self.sidebar, text="α Alpha\nQuant.", font=DS.font_display_xl(), text_color=DS.TEXT_PRIMARY, justify="left", anchor="w").pack(anchor="w", pady=(40, 60))
         self._create_menu_item("⊞  Dashboard", "dashboard", active=True)
         self._create_menu_item("∿  Live Chart", "chart")
@@ -1000,6 +1170,47 @@ class TerminalApple(ctk.CTk):
         self.views["analytics"] = ViewAnalytics(self.main)
         self.views["settings"] = ViewSettings(self.main)
         self._show_view("dashboard")
+        
+        # Auto-start Web Server if enabled
+        if self.views["settings"].sw_web_enable.get():
+            self.views["settings"]._toggle_web()
+
+        # Register Start Callback for Web Server
+        core.web_server.start_callback = lambda: self.after(0, self._start)
+        
+        # Start Engine State Monitor
+        self._monitor_engine_state()
+
+        # Bind Close Event
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def on_closing(self):
+        """Handle application closure"""
+        try:
+            if self.engine and self.engine.running:
+                self.engine.stop()
+            
+            # Kill Ngrok
+            try:
+                from pyngrok import ngrok
+                ngrok.kill()
+            except:
+                pass
+                
+            self.destroy()
+            sys.exit(0)
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+            sys.exit(1)
+
+    def _monitor_engine_state(self):
+        """Poll engine state to sync with remote stop requests"""
+        if self.engine and not self.engine.running:
+            # Engine exists but is not running -> It was stopped (possibly remotely)
+            logger.info("Engine stopped detected by monitor. Syncing UI...")
+            self._stop() # Update UI
+        
+        self.after(1000, self._monitor_engine_state)
 
     def _create_menu_item(self, text, view_name=None, active=False):
         color = DS.TEXT_PRIMARY if active else DS.TEXT_SECONDARY
@@ -1024,20 +1235,150 @@ class TerminalApple(ctk.CTk):
             if new_btn: new_btn.configure(fg_color=DS.BG_ISLAND, text_color=DS.TEXT_PRIMARY, font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"))
 
     def _start(self):
-        config = self.views["agents"].get_config()
+        """Start the trading engine"""
+        config = self._get_web_config()
+        
+        # 验证配置
+        is_valid, error_msg = self.views["agents"].validate_config(config)
+        if not is_valid:
+            messagebox.showerror("配置错误", error_msg)
+            return
+        
+        # 保存配置到文件，确保下次启动时保持这些设置
         ConfigManager.save(config)
         self.views["dashboard"].status_badge.configure(text="● INITIALIZING...", text_color=DS.ACCENT_ORANGE)
         self.btn_start.configure(state="disabled", fg_color=DS.BG_ISLAND)
         threading.Thread(target=self._run_engine, args=(config,), daemon=True).start()
+    
+    def _stop(self):
+        """Stop the trading engine"""
+        if self.engine:
+            self.engine.stop()
+            self.engine = None
+        self.views["dashboard"].status_badge.configure(text="● STOPPED", text_color=DS.ACCENT_RED)
+        self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE)
+
+    def _get_web_config(self):
+        config = self.views["agents"].get_config()
+        config.update(self.views["settings"].get_config())
+        return config
+
+    def _set_web_config(self, config):
+        # Update ViewAgents
+        view_agents = self.views["agents"]
+        if "symbol" in config: view_agents.symbol_entry.delete(0, "end"); view_agents.symbol_entry.insert(0, config["symbol"])
+        if "lot_size" in config: view_agents.lot_entry.delete(0, "end"); view_agents.lot_entry.insert(0, config["lot_size"])
+        if "risk" in config: view_agents.risk_entry.delete(0, "end"); view_agents.risk_entry.insert(0, config["risk"])
+        
+        # Update Timeframe
+        if "timeframe" in config: view_agents.timeframe_var.set(config["timeframe"])
+        
+        # Update Max Loss
+        if "max_daily_loss" in config: 
+            view_agents.max_loss_entry.delete(0, "end")
+            view_agents.max_loss_entry.insert(0, str(config["max_daily_loss"]))
+        elif "max_loss" in config: 
+            view_agents.max_loss_entry.delete(0, "end")
+            view_agents.max_loss_entry.insert(0, str(config["max_loss"]))
+        
+        # Update News Filter
+        if "news_filter" in config: view_agents.news_filter_var.set(config["news_filter"])
+        if "news_buffer" in config: view_agents.news_buffer_entry.delete(0, "end"); view_agents.news_buffer_entry.insert(0, str(config["news_buffer"]))
+        
+        # Update Trailing Stop
+        if "trailing_enabled" in config: view_agents.trailing_var.set(config["trailing_enabled"])
+        if "trailing_distance" in config: view_agents.trailing_distance_entry.delete(0, "end"); view_agents.trailing_distance_entry.insert(0, str(config["trailing_distance"]))
+        
+        # Update Partial Close
+        if "partial_close_enabled" in config: view_agents.partial_close_var.set(config["partial_close_enabled"])
+        if "partial_close_percent" in config: view_agents.partial_close_percent_entry.delete(0, "end"); view_agents.partial_close_percent_entry.insert(0, str(config["partial_close_percent"]))
+        if "tp1_distance" in config: view_agents.tp1_distance_entry.delete(0, "end"); view_agents.tp1_distance_entry.insert(0, str(config["tp1_distance"]))
+
+        # Update ViewSettings
+        view_settings = self.views["settings"]
+        if "telegram_token" in config: view_settings.token_entry.delete(0, "end"); view_settings.token_entry.insert(0, config["telegram_token"])
+        if "telegram_chat_id" in config: view_settings.chat_entry.delete(0, "end"); view_settings.chat_entry.insert(0, config["telegram_chat_id"])
+        
+        # Handle Risk Mode
+        if "risk_mode" in config:
+            mode = config["risk_mode"]
+            if mode == "risk":
+                view_agents.lot_entry.configure(state="disabled", fg_color=DS.BG_ISLAND)
+                view_agents.risk_entry.configure(state="normal", fg_color=DS.BG_MAIN)
+                config["use_risk_based_sizing"] = True
+            else:
+                view_agents.lot_entry.configure(state="normal", fg_color=DS.BG_MAIN)
+                view_agents.risk_entry.configure(state="disabled", fg_color=DS.BG_ISLAND)
+                config["use_risk_based_sizing"] = False
+
+        # Save Config
+        ConfigManager.save(config)
+        
+        # Sync with Running Engine
+        if self.engine:
+            # Check for critical changes
+            if "symbol" in config and config["symbol"] != str(self.engine.symbols[0]):
+                 messagebox.showwarning("Restart Required", "Symbol changed. Please restart engine to apply.")
+            if "timeframe" in config and config["timeframe"] != self.engine.timeframe:
+                 messagebox.showwarning("Restart Required", "Timeframe changed. Please restart engine to apply.")
+            
+            self.engine.update_config(config)
+            
+        # Update Web Password
+        if "web_password" in config:
+            try:
+                import core.web_server
+                core.web_server.set_password(config["web_password"])
+            except Exception as e:
+                logger.error(f"Failed to update web password: {e}")
         
     def _run_engine(self, config):
         try:
             telegram_notifier = None
             if config.get("telegram_enabled", False):
                 telegram_notifier = TelegramNotifier(
-                    token=config.get("telegram_token", ""),
+                    bot_token=config.get("telegram_token", ""),
                     chat_id=config.get("telegram_chat_id", "")
                 )
+                telegram_notifier.enable()
+
+            # Ngrok Automation
+            if config.get("ngrok_enabled", False):
+                try:
+                    from pyngrok import ngrok, conf
+                    import logging
+                    
+                    # Suppress pyngrok logs
+                    logging.getLogger("pyngrok").setLevel(logging.WARNING)
+
+                    
+                    # Set Auth Token
+                    ngrok_token = config.get("ngrok_token", "")
+                    if ngrok_token:
+                        conf.get_default().auth_token = ngrok_token
+                        
+                    # Kill existing tunnels to avoid conflicts
+                    ngrok.kill()
+                    
+                    # Connect Tunnel
+                    public_url = ngrok.connect(8000).public_url
+                    logger.info(f"Ngrok Tunnel Started: {public_url}")
+                    
+                    # Send Notification
+                    if telegram_notifier:
+                        msg = (
+                            f"🚀 **AlphaQuant Engine Started**\n\n"
+                            f"🌍 **Remote Dashboard**: {public_url}\n"
+                            f"🔑 **Password**: {config.get('web_password', 'Not Set')}\n"
+                            f"📊 **Status**: Running\n"
+                            f"⚠️ *Note: This link expires when engine stops.*"
+                        )
+                        telegram_notifier.send_message(msg)
+                        
+                except Exception as e:
+                    logger.error(f"Ngrok Start Failed: {e}")
+                    if telegram_notifier:
+                        telegram_notifier.send_message(f"⚠️ **Ngrok Error**: Failed to start tunnel.\n{str(e)}")
             
             # Parse symbols
             symbols_str = config["symbol"]
@@ -1066,7 +1407,7 @@ class TerminalApple(ctk.CTk):
                 lot_size=float(config["lot_size"]),
                 mt5_path=config["mt5"] if config["mt5"] != "auto" else None,
                 max_spread=int(config.get("max_spread", 50)),
-                max_daily_loss=float(config.get("max_loss", 500.0)),
+                max_daily_loss=float(config.get("max_daily_loss", config.get("max_loss", 500.0))),
                 min_equity=float(config.get("min_equity", 0)),
                 use_risk_based_sizing=True if float(config["risk"]) > 0 else False,
                 risk_percent=float(config["risk"]) / 100.0,
@@ -1079,31 +1420,59 @@ class TerminalApple(ctk.CTk):
                 partial_close_percent=float(config.get("partial_close_percent", 50)),
                 callback_status=self._on_status_update
             )
-            # Run Async Engine
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.engine.run_async())
-            loop.close()
             
-            # self.engine.start() # Legacy Thread Start
-            self.after(0, lambda: self.views["dashboard"].status_badge.configure(text="● ENGINE ACTIVE", text_color=DS.ACCENT_BLUE))
+            # Sync Engine with Web Server
+            try:
+                core.web_server.set_engine(self.engine)
+            except Exception as e:
+                logger.error(f"Failed to sync engine with web server: {e}")
+
+            # Run Engine (Synchronous wrapper around async loop)
             self.after(0, lambda: self.btn_stop.configure(state="normal"))
+            self.engine.run()
 
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Engine Start Error: {error_msg}")
             self.after(0, lambda: self.views["dashboard"].status_badge.configure(text="● ERROR", text_color=DS.ACCENT_RED))
             self.after(0, lambda: self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE))
-            self.after(0, lambda: messagebox.showerror("Start Failed", error_msg))
+            self.after(0, lambda: messagebox.showerror("启动失败", f"引擎启动失败:\n\n{error_msg}\n\n请检查:\n1. MT5 是否已打开并登录\n2. Agent Bundle 是否有效\n3. 网络连接是否正常\n4. 查看 Logs 面板获取详细错误信息"))
+            current_time = time.time()
+            if current_time - self.last_chart_update >= 1.0:
+                if "chart" in self.views and "history" in status:
+                    self.views["chart"].update_chart(status["history"])
+                self.last_chart_update = current_time
+            if "dashboard" in self.views:
+                price = status.get("price", 0.0)
+                signal = status.get("signal", "HOLD")
+                conf = status.get("confidence", 0.0)
+                balance = status.get("balance", 0.0)
+                equity = status.get("equity", 0.0)
+                pnl = equity - balance
+                
+                # SYNC WITH WEB SERVER: Update engine attributes so web server can read them
+                if self.engine:
+                    self.engine.last_price = price
+                    self.engine.last_equity = equity
+                    self.engine.last_balance = balance
+                    self.engine.last_daily_pnl = pnl
+                    # Cache positions for web server
+                    if "positions" in status:
+                        self.engine.open_positions_cache = status["positions"]
+                    elif "trades" in status: 
+                        # Fallback if positions key missing but trades present (unlikely with new engine)
+                        pass 
+                    else:
+                        self.engine.open_positions_cache = self.engine.get_open_positions()
 
-    def _stop(self):
-        if self.engine:
-            self.engine.stop()
-            self.engine = None
-        self.views["dashboard"].status_badge.configure(text="● STOPPED", text_color=DS.ACCENT_RED)
-        self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE)
-        self.btn_stop.configure(state="disabled")
-            
+                self.views["dashboard"].update_stats(signal, conf, price, balance, equity, pnl)
+                if "trades" in status: self.views["dashboard"].update_trades(status["trades"])
+                positions = []
+                if self.engine: positions = self.engine.get_open_positions()
+                self.views["dashboard"].update_positions(positions)
+        except Exception as e:
+            logger.error(f"UI Update Error: {e}")
+
     def _on_status_update(self, status):
         try:
             current_time = time.time()
@@ -1118,13 +1487,46 @@ class TerminalApple(ctk.CTk):
                 balance = status.get("balance", 0.0)
                 equity = status.get("equity", 0.0)
                 pnl = equity - balance
-                self.views["dashboard"].update_stats(signal, conf, price, balance, equity, pnl)
-                if "trades" in status: self.views["dashboard"].update_trades(status["trades"])
+                total_profit = status.get("total_profit", 0.0)
+                
+                # SYNC WITH WEB SERVER: Update engine attributes so web server can read them
+                if self.engine:
+                    self.engine.last_price = price
+                    self.engine.last_equity = equity
+                    self.engine.last_balance = balance
+                    self.engine.last_daily_pnl = pnl
+                    self.engine.last_total_profit = total_profit
+                    self.engine.last_confidence = conf
+                    # Cache positions for web server
+                    if "trades" in status: 
+                        # If trades are in status, use them, otherwise query engine
+                        pass 
+                    self.engine.open_positions_cache = self.engine.get_open_positions()
+
+                # UI Updates (Must be on main thread)
+                self.after(0, lambda: self.views["dashboard"].update_stats(signal, conf, price, balance, equity, pnl))
+                if "trades" in status: 
+                    self.after(0, lambda: self.views["dashboard"].update_trades(status["trades"]))
+                
                 positions = []
                 if self.engine: positions = self.engine.get_open_positions()
-                self.views["dashboard"].update_positions(positions)
+                self.after(0, lambda: self.views["dashboard"].update_positions(positions))
         except Exception as e:
             logger.error(f"UI Update Error: {e}")
+
+    def _stop(self):
+        if self.engine:
+            self.engine.stop()
+            self.engine = None
+            
+        # Sync with Web Server
+        try:
+            core.web_server.set_engine(None)
+        except: pass
+            
+        self.views["dashboard"].status_badge.configure(text="● STOPPED", text_color=DS.ACCENT_RED)
+        self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE)
+        self.btn_stop.configure(state="disabled")
     
     def _check_for_updates(self):
         """Check for updates on startup"""

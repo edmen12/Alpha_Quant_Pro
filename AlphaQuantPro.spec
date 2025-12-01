@@ -8,9 +8,9 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dyn
 from PyInstaller.building.build_main import Analysis, PYZ, EXE, COLLECT
 
 # Collect dependencies
-datas = [('agents', 'agents'), ('core', 'core')]
+datas = [('core', 'core'), ('web_ui', 'web_ui')]
 binaries = []
-hiddenimports = ['onnxruntime', 'pandas', 'numpy', 'xgboost', 'yfinance', 'scipy', 'sklearn', 'torch', 'gymnasium', 'darkdetect', 'customtkinter', 'tkinter', 'tkinter.font', 'tkinter.ttk', 'plistlib', 'uuid', 'ctypes', 'platform', 'subprocess', 'xml', 'xml.etree.ElementTree', 'xml.parsers.expat', 'colorsys', 'mmap', 'sqlite3', 'multiprocessing']
+hiddenimports = ['onnxruntime', 'pandas', 'numpy', 'xgboost', 'yfinance', 'scipy', 'sklearn', 'torch', 'gymnasium', 'darkdetect', 'customtkinter', 'tkinter', 'tkinter.font', 'tkinter.ttk', 'plistlib', 'uuid', 'ctypes', 'platform', 'subprocess', 'xml', 'xml.etree.ElementTree', 'xml.parsers.expat', 'colorsys', 'mmap', 'sqlite3', 'multiprocessing', 'uvicorn', 'fastapi', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'email.mime.multipart', 'email.mime.text', 'email.mime.base']
 
 # Manual customtkinter bundling
 datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\customtkinter', 'customtkinter'))
@@ -56,6 +56,17 @@ datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-p
 datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\flatbuffers', 'flatbuffers'))
 datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\coloredlogs', 'coloredlogs'))
 datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sympy', 'sympy'))
+
+# Manual bundling of FastAPI and Uvicorn (Nuclear Option v7 - Web Server)
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\uvicorn', 'uvicorn'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\fastapi', 'fastapi'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\starlette', 'starlette'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\pydantic', 'pydantic'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\anyio', 'anyio'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sniffio', 'sniffio'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\h11', 'h11'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\click', 'click'))
+datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\typing_extensions.py', '.'))
 
 # Collect others
 tmp_ret = collect_all('stable_baselines3')

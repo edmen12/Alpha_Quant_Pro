@@ -120,6 +120,11 @@ class TradingEngine:
         # Asyncio Executor for blocking tasks (MT5, Neural Net)
         self.executor = ThreadPoolExecutor(max_workers=1) # MT5 is not thread-safe, use 1 worker for safety
 
+        # Analytics Cache
+        self.analytics_cache = None
+        self.last_analytics_time = 0
+        self.analytics_cache_ttl = 60 # seconds
+
     def log(self, msg):
         logger.info(msg)
 
@@ -157,8 +162,14 @@ class TradingEngine:
             # Update Risk Settings
             if "risk" in config:
                 self.risk_percent = float(config["risk"]) / 100.0
-                self.use_risk_based_sizing = True if self.risk_percent > 0 else False
+                # Only infer if explicit key not present (backward compatibility)
+                if "use_risk_based_sizing" not in config:
+                    self.use_risk_based_sizing = True if self.risk_percent > 0 else False
                 self.log(f"Risk Updated: {self.risk_percent*100}%")
+            
+            if "use_risk_based_sizing" in config:
+                self.use_risk_based_sizing = config["use_risk_based_sizing"]
+                self.log(f"Sizing Mode Updated: {'Risk %' if self.use_risk_based_sizing else 'Fixed Lot'}")
             
             if "lot_size" in config: self.lot_size = float(config["lot_size"])
             
@@ -764,24 +775,47 @@ class TradingEngine:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self.executor, functools.partial(func, *args, **kwargs))
 
-    async def get_analytics(self, days=30):
-        """Get performance metrics safely via executor"""
-        def _calc():
-            try:
-                # 1. Fetch history using Engine's connection (Thread-Safe context)
-                history = self.get_trade_history(days)
-                
-                # 2. Pass data to Analyzer
-                analyzer = PerformanceAnalyzer(symbol=None)
-                return {
-                    'metrics': analyzer.get_all_metrics(days, trades_list=history),
-                    'curve': analyzer.get_equity_curve(days, trades_list=history)
-                }
-            except Exception as e:
-                logger.error(f"[Analytics] Calculation Error: {e}")
-                return {'metrics': {}, 'curve': {}}
+    def _calculate_analytics_internal(self, days=30):
+        """Internal synchronous calculation logic"""
+        try:
+            # 1. Fetch history using Engine's connection (Thread-Safe context)
+            history = self.get_trade_history(days)
             
-        return await self._run_blocking(_calc)
+            # 2. Pass data to Analyzer
+            analyzer = PerformanceAnalyzer(symbol=None)
+            return {
+                'metrics': analyzer.get_all_metrics(days, trades_list=history),
+                'curve': analyzer.get_equity_curve(days, trades_list=history)
+            }
+        except Exception as e:
+            logger.error(f"[Analytics] Calculation Error: {e}")
+            return {'metrics': {}, 'curve': {}}
+
+    def get_analytics_sync(self, days=30):
+        """
+        Synchronous method to get analytics with caching.
+        Safe to call from GUI thread or Executor.
+        """
+        current_time = time.time()
+        
+        # Return cached if valid
+        if (self.analytics_cache and 
+            current_time - self.last_analytics_time < self.analytics_cache_ttl):
+            return self.analytics_cache
+            
+        # Calculate
+        result = self._calculate_analytics_internal(days)
+        
+        # Update Cache
+        if result and result.get('metrics'):
+            self.analytics_cache = result
+            self.last_analytics_time = current_time
+            
+        return result
+
+    async def get_analytics(self, days=30):
+        """Get performance metrics safely via executor with caching (Async wrapper)"""
+        return await self._run_blocking(self.get_analytics_sync, days)
 
     async def check_risk_limits(self):
         """
@@ -855,6 +889,9 @@ class TradingEngine:
                         self.running = False
                         break
 
+
+                    # Get Account Info (Global)
+                    account = await self._run_blocking(mt5.account_info)
 
                     # --- Iterate over ALL symbols ---
                     for symbol in self.symbols:
@@ -958,6 +995,7 @@ class TradingEngine:
                         
                         positions = await self._run_blocking(self.get_all_positions) # Get ALL positions
                         current_pnl = sum([p['profit'] for p in positions]) if positions else 0.0
+                        total_profit = await self._run_blocking(self.db.get_total_profit)
                         
                         # Use bid price of primary symbol
                         tick = mt5.symbol_info_tick(primary_symbol)
@@ -971,6 +1009,7 @@ class TradingEngine:
                             "equity": account.equity if account else 0,
                             "positions": positions, # Pass full list
                             "pnl": current_pnl,
+                            "total_profit": total_profit,
                             "history": df_ui,
                             "trades": trades
                         }

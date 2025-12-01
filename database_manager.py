@@ -240,6 +240,18 @@ class DatabaseManager:
             logger.error(f"Failed to get trade history: {e}")
             return []
 
+    def get_total_profit(self) -> float:
+        """Get total realized profit from all closed trades"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT SUM(profit) FROM trades WHERE status = 'CLOSED'")
+                result = cursor.fetchone()[0]
+                return result if result else 0.0
+        except Exception as e:
+            logger.error(f"Failed to get total profit: {e}")
+            return 0.0
+
 if __name__ == "__main__":
     # Test
     logging.basicConfig(level=logging.INFO)
