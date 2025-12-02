@@ -1135,9 +1135,25 @@ class ViewChart(ctk.CTkFrame):
 class TerminalApple(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Alpha Quant Pro - iOS 26")
+        self.title("Alpha Quant Pro")
         self.geometry("1400x900")
         self.configure(fg_color=DS.BG_MAIN)
+        
+        # Set Icon
+        try:
+            if getattr(sys, 'frozen', False):
+                # Frozen: Icon is in the same directory or MEIPASS
+                icon_path = Path(sys.executable).parent / "Alpha_Quant_Pro_logo.ico"
+                if not icon_path.exists():
+                    icon_path = Path(sys._MEIPASS) / "Alpha_Quant_Pro_logo.ico"
+            else:
+                # Dev: Icon is in current directory
+                icon_path = Path("Alpha_Quant_Pro_logo.ico")
+            
+            if icon_path.exists():
+                self.iconbitmap(str(icon_path))
+        except Exception as e:
+            logger.error(f"Failed to set icon: {e}")
         
         # Initialize state
         self.views = {}

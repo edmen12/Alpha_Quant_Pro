@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 应用版本信息
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.3.4"
 GITHUB_REPO = "edmen12/Alpha_Quant_Pro"  # GitHub 仓库
 CHECK_UPDATE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 

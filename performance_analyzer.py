@@ -73,8 +73,9 @@ class PerformanceAnalyzer:
                     trades.append({
                         'ticket': d.ticket,
                         'time': datetime.fromtimestamp(d.time),
-                        # User Request: Match MT5 History Deal Type (0=BUY, 1=SELL)
-                        'type': 'BUY' if d.type == 0 else 'SELL',
+                        # Logic Inverted: A closing SELL deal (1) means the position was a BUY.
+                        # A closing BUY deal (0) means the position was a SELL.
+                        'type': 'SELL' if d.type == 0 else 'BUY',
                         'volume': d.volume,
                         'price': d.price,
                         'profit': d.profit,
@@ -82,6 +83,7 @@ class PerformanceAnalyzer:
                         'swap': d.swap,
                         'symbol': d.symbol
                     })
+                    logger.info(f"History Debug: Ticket={d.ticket}, Type={d.type} (0=Buy,1=Sell), Entry={d.entry}, Mapped={'SELL' if d.type == 0 else 'BUY'}")
             
             return trades
             
