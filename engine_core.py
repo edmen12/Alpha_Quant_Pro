@@ -125,6 +125,9 @@ class TradingEngine:
         self.last_analytics_time = 0
         self.analytics_cache_ttl = 60 # seconds
 
+        # Performance Analyzer
+        self.performance_analyzer = PerformanceAnalyzer(symbol=self.symbol, mt5_path=self.mt5_path)
+
     def log(self, msg):
         logger.info(msg)
 
@@ -145,6 +148,77 @@ class TradingEngine:
                     self.telegram.send_message(msg)
             except Exception as e:
                 self.log(f"Failed to send Telegram alert: {e}")
+
+    def _send_formatted_alert(self, event_type, **kwargs):
+        """Helper to format alerts based on user templates"""
+        if not self.telegram: return
+
+        try:
+            msg = ""
+            if event_type == "OPEN":
+                # [OPEN] BUY XAUUSD Size: (lot) lots Price: (Price) SL: (Price) | TP: (Price) Time: (time) ID: (oder id）
+                msg = (f"[OPEN] {kwargs.get('type')} {kwargs.get('symbol')} "
+                       f"Size: {kwargs.get('volume')} lots Price: {kwargs.get('price')} "
+                       f"SL: {kwargs.get('sl', 0)} | TP: {kwargs.get('tp', 0)} "
+                       f"Time: {datetime.now().strftime('%H:%M:%S')} ID: {kwargs.get('id')}")
+            
+            elif event_type == "CLOSE":
+                # [CLOSE] XAUUSD Size: (lot) lots Price: (price) P&L: (+/-amount) ID: (order id)
+                msg = (f"[CLOSE] {kwargs.get('symbol')} "
+                       f"Size: {kwargs.get('volume')} lots Price: {kwargs.get('price')} "
+                       f"P&L: {kwargs.get('profit'):+.2f} ID: {kwargs.get('id')}")
+            
+            elif event_type == "TP_HIT":
+                # [TP HIT] BUY XAUUSD Size: (lot) lots Close Price: (price) P&L: (+amount) ID: (order id)
+                msg = (f"[TP HIT] {kwargs.get('type')} {kwargs.get('symbol')} "
+                       f"Size: {kwargs.get('volume')} lots Close Price: {kwargs.get('price')} "
+                       f"P&L: {kwargs.get('profit'):+.2f} ID: {kwargs.get('id')}")
+
+            elif event_type == "SL_HIT":
+                # [SL HIT] BUY XAUUSD Size: (lot) lots Close Price: (price) P&L: (-amount) ID: (order id)
+                msg = (f"[SL HIT] {kwargs.get('type')} {kwargs.get('symbol')} "
+                       f"Size: {kwargs.get('volume')} lots Close Price: {kwargs.get('price')} "
+                       f"P&L: {kwargs.get('profit'):+.2f} ID: {kwargs.get('id')}")
+
+            elif event_type == "ERROR":
+                # [ERROR] Order Rejected Type: BUY XAUUSD Size: (lot) lots Reason: ...
+                msg = (f"[ERROR] Order Rejected Type: {kwargs.get('type')} {kwargs.get('symbol')} "
+                       f"Size: {kwargs.get('volume')} lots Reason: {kwargs.get('reason')}")
+
+            elif event_type == "UPDATE":
+                # [UPDATE] Trailing SL Moved ID: (oder id) Symbol: symbol New SL: (price) Locked Profit: (+amount)
+                # Note: Locked Profit calculation requires current price, we might just show SL
+                msg = (f"[UPDATE] Trailing SL Moved ID: {kwargs.get('id')} "
+                       f"Symbol: {kwargs.get('symbol')} New SL: {kwargs.get('sl')} "
+                       f"Locked Profit: {kwargs.get('profit', 'N/A')}")
+
+            elif event_type == "RISK":
+                # [RISK] High Spread Detected Symbol: XAUUSD Current Spread: (point) points Limit: (point) points Action: Entries Paused
+                msg = (f"[RISK] High Spread Detected Symbol: {kwargs.get('symbol')} "
+                       f"Current Spread: {kwargs.get('spread')} points "
+                       f"Limit: {kwargs.get('limit')} points Action: Entries Paused")
+            
+            elif event_type == "MARGIN_CALL":
+                # [WARNING] MARGIN CALL Account: (acc no) Level: (%) Action: Force Close (lot) XAUUSD Remaining Equity: (amount)
+                msg = (f"[WARNING] MARGIN CALL Account: {kwargs.get('account')} "
+                       f"Level: {kwargs.get('level')}% Action: Force Close All "
+                       f"Remaining Equity: {kwargs.get('equity')}")
+
+            elif event_type == "MAX_DAILY_LOSS":
+                # [RISK ALERT] Max Daily Loss Hit Today P&L: (-Amount) Limit: (amount) Action: Trading Paused Status: Awaiting Manual Reset
+                msg = (f"[RISK ALERT] Max Daily Loss Hit Today P&L: {kwargs.get('pnl')} "
+                       f"Limit: {kwargs.get('limit')} Action: Trading Paused Status: Awaiting Manual Reset")
+
+            elif event_type == "FILLED":
+                # [FILLED] Buy Limit Executed ID: (order id) Price: (price) Status: Active Position
+                # Note: We don't know if it was a Buy Limit specifically, but we can say "Order Executed" or stick to user template
+                msg = (f"[FILLED] Order Executed ID: {kwargs.get('id')} "
+                       f"Price: {kwargs.get('price')} Status: {kwargs.get('status')}")
+            
+            if msg:
+                self.send_alert(msg)
+        except Exception as e:
+            self.log(f"Error formatting alert: {e}")
 
     def update_config(self, config):
         """
@@ -385,6 +459,7 @@ class TradingEngine:
             return False
         else:
             self.log(f"Position {ticket} Closed Manually | Profit: ${current_profit:.2f}")
+            self._send_formatted_alert("CLOSE", symbol=pos.symbol, volume=pos.volume, price=request['price'], profit=current_profit, id=ticket)
             # Update DB with actual close price and profit
             self.db.close_trade(ticket, request['price'], current_profit)
             return True
@@ -425,6 +500,7 @@ class TradingEngine:
             # Check 1: Spread Filter
             if spread > self.max_spread:
                 self.log(f"❌ Smart Entry: Spread too high for {symbol} ({spread:.1f} > {self.max_spread}) | Ask: {tick.ask}, Bid: {tick.bid}, Point: {symbol_info.point}")
+                self._send_formatted_alert("RISK", symbol=symbol, spread=int(spread), limit=self.max_spread)
                 return False
             
             # Check 2: Market Hours (Optional - avoid low liquidity hours)
@@ -488,9 +564,10 @@ class TradingEngine:
         result = mt5.order_send(request)
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             self.log(f"Order Failed: {result.comment}")
+            self._send_formatted_alert("ERROR", type=action, symbol=symbol, volume=volume, reason=result.comment)
         else:
             self.log(f"Order Executed: {action} {volume} Lots @ {request['price']}")
-            self.send_alert(f"✅ Order Executed\nType: {action}\nSymbol: {symbol}\nVolume: {volume}\nPrice: {request['price']}")
+            self._send_formatted_alert("OPEN", type=action, symbol=symbol, volume=volume, price=request['price'], sl=sl, tp=tp, id=result.order)
             # Save to DB
             if result.order:
                 trade_dict = {
@@ -590,6 +667,7 @@ class TradingEngine:
             if result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info(f"✅ Trailing SL Updated: Ticket {ticket} -> SL {new_sl:.2f}")
                 self.db.update_trade(ticket, {'sl': new_sl})
+                self._send_formatted_alert("UPDATE", id=ticket, symbol=symbol, sl=new_sl, profit="N/A") # Profit calc needs open price
                 return True
             else:
                 logger.info(f"Failed to update SL: {result.comment}")
@@ -751,6 +829,37 @@ class TradingEngine:
             for ticket in db_trades:
                 if ticket not in mt5_positions:
                     logger.info(f"Trade {ticket} missing in MT5. Marking as CLOSED in DB.")
+                    
+                    # Check why it closed (SL/TP/Manual)
+                    try:
+                        # Get deals for this position
+                        deals = mt5.history_deals_get(position=ticket)
+                        if deals:
+                            # Look for the OUT deal
+                            out_deal = next((d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT), None)
+                            if out_deal:
+                                close_price = out_deal.price
+                                profit = out_deal.profit + out_deal.swap + out_deal.commission
+                                reason = out_deal.reason
+                                
+                                event_type = "CLOSE"
+                                if reason == mt5.DEAL_REASON_SL: event_type = "SL_HIT"
+                                elif reason == mt5.DEAL_REASON_TP: event_type = "TP_HIT"
+                                
+                                self._send_formatted_alert(event_type, 
+                                    type='BUY' if out_deal.type == 0 else 'SELL', # Note: Deal type is opposite of Position type usually? No, Deal Type 1 is Sell. If Position was Buy, Close Deal is Sell.
+                                    # Wait, user wants "BUY XAUUSD" for the trade type.
+                                    # If out_deal.type is SELL (1), it means we SOLD to close. So original was BUY.
+                                    # Correct logic: If out_deal.type == 1 (SELL), original was BUY.
+                                    symbol=out_deal.symbol,
+                                    volume=out_deal.volume,
+                                    price=close_price,
+                                    profit=profit,
+                                    id=ticket
+                                )
+                    except Exception as e:
+                        logger.error(f"Error checking close reason: {e}")
+
                     self.db.close_trade(ticket, 0.0, 0.0)
             
             # 2. Add/Update trades from MT5 to DB
@@ -758,6 +867,8 @@ class TradingEngine:
                 if ticket not in db_trades:
                     logger.info(f"Found new trade {ticket} in MT5. Adding to DB.")
                     self.db.save_trade(pos)
+                    # Alert for filled order (likely pending order filled or external trade)
+                    self._send_formatted_alert("FILLED", id=ticket, price=pos['price_open'], status="Active Position")
                 else:
                     # Restore strategy state
                     db_trade = db_trades[ticket]
@@ -829,7 +940,7 @@ class TradingEngine:
                 account = await self._run_blocking(mt5.account_info)
                 if account and account.equity < self.min_equity:
                     logger.info(f"EQUITY GUARD TRIGGERED: ${account.equity:.2f} < ${self.min_equity:.2f}")
-                    self.send_alert(f"🚨 EQUITY GUARD TRIGGERED\nEquity: ${account.equity:.2f}\nMin: ${self.min_equity:.2f}\nAction: Closing All Positions")
+                    self._send_formatted_alert("MARGIN_CALL", account=account.login, level=f"{account.margin_level:.2f}", equity=f"{account.equity:.2f}")
                     await self._run_blocking(self.close_all_positions)
                     return False
 
@@ -838,7 +949,7 @@ class TradingEngine:
                 current_daily_pnl = await self._run_blocking(self.get_daily_pnl)
                 if current_daily_pnl < -self.max_daily_loss:
                     logger.info(f"MAX DAILY LOSS TRIGGERED: PnL ${current_daily_pnl:.2f} < -${self.max_daily_loss:.2f}")
-                    self.send_alert(f"🚨 MAX DAILY LOSS TRIGGERED\nPnL: ${current_daily_pnl:.2f}\nLimit: -${self.max_daily_loss:.2f}\nAction: Closing All Positions & Stopping")
+                    self._send_formatted_alert("MAX_DAILY_LOSS", pnl=f"{current_daily_pnl:.2f}", limit=f"{self.max_daily_loss:.2f}")
                     await self._run_blocking(self.close_all_positions)
                     return False
             
@@ -870,7 +981,7 @@ class TradingEngine:
             logger.info("Agent Bundle Loaded.")
             
             logger.info(f"Engine Started. Symbols: {self.symbols}, Risk: {self.risk_percent*100}%")
-            self.send_alert(f"🚀 Engine Started\nSymbols: {self.symbols}\nRisk: {self.risk_percent*100}%")
+            # self.send_alert(f"🚀 Engine Started\nSymbols: {self.symbols}\nRisk: {self.risk_percent*100}%")
             
             # Track last bar time per symbol
             last_bar_times = {s: 0 for s in self.symbols}

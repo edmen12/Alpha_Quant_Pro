@@ -687,40 +687,48 @@
                 </div>
             </div>
 
-            <!-- POSITIONS LIST -->
             <div class="card blur-bg">
-                <div style="font-size:13px; color:var(--text-secondary); letter-spacing:1px; margin-bottom:10px">OPEN
-                    POSITIONS</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px">
+                    <h3 style="margin:0">Open Positions</h3>
+                </div>
                 <div id="pos-list">
                     <div style="text-align:center; color:var(--text-secondary); padding:20px">No Open Positions</div>
                 </div>
             </div>
 
-            <button id="btn-toggle" class="btn-primary" style="background:var(--accent-green)"
-                onclick="toggleEngine()">START ENGINE</button>
+            <div class="card blur-bg" style="text-align:center;">
+                <button id="btn-toggle" class="btn-primary" style="width:100%; height:50px; font-size:18px;"
+                    onclick="toggleEngine()">START ENGINE</button>
+                <div style="margin-top:20px;">
+                    <button onclick="showHistory()"
+                        style="background:none; border:1px solid var(--border-color); color:var(--text-secondary); padding:8px 16px; border-radius:12px; cursor:pointer; font-size:13px;">VIEW
+                        TRADING HISTORY</button>
+                </div>
+            </div>
         </div>
 
         <!-- ANALYTICS VIEW -->
         <div id="view-analytics" class="view-section hidden">
-            <div class="card blur-bg">
-                <div class="stats-grid">
-                    <div class="stat-box">
-                        <div class="stat-label">WIN RATE</div>
-                        <div id="ana-winrate" class="stat-val">0.0%</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">PROFIT FACTOR</div>
-                        <div id="ana-pf" class="stat-val">0.00</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">SHARPE</div>
-                        <div id="ana-sharpe" class="stat-val">0.00</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">MAX DD</div>
-                        <div id="ana-dd" class="stat-val">0.0%</div>
-                    </div>
+            <div class="stats-grid" style="margin-bottom:20px">
+                <div class="stat-box">
+                    <div class="stat-label">WIN RATE</div>
+                    <div id="ana-winrate" class="stat-val">0.0%</div>
                 </div>
+                <div class="stat-box">
+                    <div class="stat-label">PROFIT FACTOR</div>
+                    <div id="ana-pf" class="stat-val">0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">SHARPE RATIO</div>
+                    <div id="ana-sharpe" class="stat-val">0.00</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">MAX DRAWDOWN</div>
+                    <div id="ana-dd" class="stat-val">0.0%</div>
+                </div>
+            </div>
+            <div class="card blur-bg">
+                <h3 style="margin-top:0">Equity Curve</h3>
                 <div class="chart-container">
                     <canvas id="equityChart"></canvas>
                 </div>
@@ -760,7 +768,8 @@
                 <div class="setting-row">
                     <span>Sizing Mode</span>
                     <div class="segmented-control">
-                        <div id="mode-fixed" class="segment-btn active" onclick="setSizingMode('fixed')">Fixed Lot</div>
+                        <div id="mode-fixed" class="segment-btn active" onclick="setSizingMode('fixed')">Fixed
+                            Lot</div>
                         <div id="mode-risk" class="segment-btn" onclick="setSizingMode('risk')">Risk %</div>
                     </div>
                 </div>
@@ -900,13 +909,13 @@
                 const posList = document.getElementById('pos-list');
                 if (data.positions && data.positions.length > 0) {
                     posList.innerHTML = data.positions.map(p => `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:12px;">
-                    <div style="font-weight:600;"><span style="color:${p.type === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${p.type}</span> ${p.symbol}</div>
-                    <div style="color:var(--text-secondary);">${p.volume} lots</div>
-                    <div style="font-weight:600; color:${p.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">$${p.profit.toFixed(2)}</div>
-                    <button onclick="closeTrade(${p.ticket}, '${p.symbol}')" style="background:var(--accent-red); color:white; border:none; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px; font-weight:600;">CLOSE</button>
-                </div>
-            `).join('');
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:12px;">
+            <div style="font-weight:600;"><span style="color:${p.type === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${p.type}</span> ${p.symbol}</div>
+            <div style="color:var(--text-secondary);">${p.volume} lots</div>
+            <div style="font-weight:600; color:${p.profit >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">$${p.profit.toFixed(2)}</div>
+            <button onclick="closeTrade(${p.ticket}, '${p.symbol}')" style="background:var(--accent-red); color:white; border:none; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px; font-weight:600;">CLOSE</button>
+        </div>
+    `).join('');
                 } else {
                     posList.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:20px">No Open Positions</div>';
                 }
@@ -1175,6 +1184,64 @@
                 }
             }
         });
+    </script>
+    <!-- HISTORY MODAL -->
+    <div id="history-modal"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; justify-content:center; align-items:center;">
+        <div class="card blur-bg"
+            style="width:90%; max-width:600px; max-height:80vh; display:flex; flex-direction:column; padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 style="margin:0;">Trading History</h2>
+                <button onclick="document.getElementById('history-modal').style.display='none'"
+                    style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+            </div>
+            <div id="history-list" style="overflow-y:auto; flex:1;">
+                <div style="text-align:center; color:var(--text-secondary);">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function showHistory() {
+            document.getElementById('history-modal').style.display = 'flex';
+            const listEl = document.getElementById('history-list');
+            listEl.innerHTML = '<div style="text-align:center; color:var(--text-secondary);">Loading...</div>';
+
+            try {
+                const res = await fetch(`${API_URL}/history`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+
+                if (data.trades && data.trades.length > 0) {
+                    data.trades.sort((a, b) => new Date(b.time) - new Date(a.time));
+                    listEl.innerHTML = data.trades.map(t => {
+                        const isProfit = t.profit >= 0;
+                        const color = isProfit ? 'var(--accent-green)' : 'var(--accent-red)';
+                        const date = new Date(t.time);
+                        const timeStr = date.toLocaleString();
+
+                        return `
+        <div style="padding:10px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:13px;">
+            <div style="display:flex; justify-content:space-between;">
+                <span style="font-weight:bold; color:${t.type === 'BUY' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.type}</span>
+                <span style="color:var(--text-secondary)">${timeStr}</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:4px;">
+                <span>${t.symbol} <span style="color:var(--text-secondary)">${t.volume}</span></span>
+                <span style="font-weight:bold; color:${color}">$${t.profit.toFixed(2)}</span>
+            </div>
+        </div>
+        `;
+                    }).join('');
+                } else {
+                    listEl.innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:20px">No trading history found</div>';
+                }
+            } catch (e) {
+                console.error(e);
+                listEl.innerHTML = '<div style="text-align:center; color:var(--accent-red); padding:20px">Failed to load history</div>';
+            }
+        }
     </script>
 </body>
 

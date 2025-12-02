@@ -332,6 +332,33 @@ async def get_analytics():
         logger.error(f"Get Analytics Failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/history", dependencies=[Depends(verify_token)])
+async def get_history():
+    """
+    Fetch trading history (closed trades)
+    """
+    global trading_engine
+    if not trading_engine:
+        return {"trades": []}
+    
+    try:
+        # Get trade history from engine's performance analyzer
+        if hasattr(trading_engine, 'performance_analyzer'):
+            trades = trading_engine.performance_analyzer.get_trade_history(days=30)
+            # Convert datetime objects to ISO strings for JSON serialization
+            serializable_trades = []
+            for trade in trades:
+                trade_copy = trade.copy()
+                if 'time' in trade_copy and trade_copy['time']:
+                    trade_copy['time'] = trade_copy['time'].isoformat()
+                serializable_trades.append(trade_copy)
+            return {"trades": serializable_trades}
+        else:
+            return {"trades": []}
+    except Exception as e:
+        logger.error(f"Get History Failed: {e}")
+        return {"trades": []}
+
 @app.get("/api/logs", dependencies=[Depends(verify_token)])
 async def get_logs():
     """

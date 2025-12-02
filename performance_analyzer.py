@@ -73,10 +73,8 @@ class PerformanceAnalyzer:
                     trades.append({
                         'ticket': d.ticket,
                         'time': datetime.fromtimestamp(d.time),
-                        # Logic Inversion for DEAL_ENTRY_OUT:
-                        # Closing Deal is SELL (1) -> Original Trade was BUY
-                        # Closing Deal is BUY (0)  -> Original Trade was SELL
-                        'type': 'BUY' if d.type == 1 else 'SELL',
+                        # User Request: Match MT5 History Deal Type (0=BUY, 1=SELL)
+                        'type': 'BUY' if d.type == 0 else 'SELL',
                         'volume': d.volume,
                         'price': d.price,
                         'profit': d.profit,

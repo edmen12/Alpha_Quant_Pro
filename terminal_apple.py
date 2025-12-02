@@ -9,6 +9,8 @@ sys.setrecursionlimit(5000)
 import shutil
 from pathlib import Path
 import core.web_server
+import threading
+import time
 
 # Fix for embedded Python Tkinter
 # Use AppData for logging to avoid PermissionError in Program Files
@@ -1356,34 +1358,126 @@ class TerminalApple(ctk.CTk):
                     # Suppress pyngrok logs
                     logging.getLogger("pyngrok").setLevel(logging.WARNING)
 
+                    # Configure to hide console window on Windows using CREATE_NO_WINDOW
+                    if sys.platform == "win32":
+                        import subprocess
+                        # CREATE_NO_WINDOW = 0x08000000 - completely hides the console window
+                        CREATE_NO_WINDOW = 0x08000000
+                        
+                        # Set on pyngrok config
+                        pyngrok_config = conf.get_default()
+                        pyngrok_config.start_new_session = False # Don't create new session/console group
+                        
+                        # Create startupinfo with SW_HIDE (Standard method)
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.wShowWindow = subprocess.SW_HIDE
+                        pyngrok_config.startup_info = startupinfo
+                        
+                        # Set creation flags to use CREATE_NO_WINDOW (Nuclear method)
+                        pyngrok_config.subprocess_creation_flags = CREATE_NO_WINDOW
                     
                     # Set Auth Token
                     ngrok_token = config.get("ngrok_token", "")
                     if ngrok_token:
-                        # Configure to hide console window on Windows
-                        if sys.platform == "win32":
-                            import subprocess
-                            startupinfo = subprocess.STARTUPINFO()
-                            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                            conf.get_default().startupinfo = startupinfo
-
                         conf.get_default().auth_token = ngrok_token
                         
                     # Kill existing tunnels to avoid conflicts
                     ngrok.kill()
                     
                     # Connect Tunnel
-                    public_url = ngrok.connect(8000).public_url
+                    public_url = ngrok.connect(8000, "http", pyngrok_config=pyngrok_config).public_url
                     logger.info(f"Ngrok Tunnel Started: {public_url}")
+                    
+                    # FORCE HIDE WINDOW (Nuclear Option)
+                    if sys.platform == "win32":
+                        try:
+                            import ctypes
+                            ngrok_process = ngrok.get_ngrok_process()
+                            if ngrok_process and ngrok_process.proc:
+                                pid = ngrok_process.proc.pid
+                                
+                                def hide_window_callback(hwnd, _):
+                                    lpdw_process_id = ctypes.c_ulong()
+                                    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw_process_id))
+                                    if lpdw_process_id.value == pid:
+                                        ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
+                                        return False # Stop enumeration
+                                    return True
+                                    
+                                CMPFUNC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+                                ctypes.windll.user32.EnumWindows(CMPFUNC(hide_window_callback), 0)
+                                logger.info(f"Attempted to force hide Ngrok window (PID: {pid})")
+                        except Exception as e:
+                            logger.error(f"Failed to force hide window: {e}")
+                    
+                    # Persistent Window Hider (Daemon Thread)
+                    def _monitor_ngrok_window(pid):
+                        import ctypes
+                        logger.info(f"Starting persistent window monitor for PID {pid}")
+                        # Monitor for 60 seconds (120 * 0.5s)
+                        for i in range(120): 
+                            try:
+                                found = False
+                                def hide_window_callback(hwnd, _):
+                                    nonlocal found
+                                    lpdw_process_id = ctypes.c_ulong()
+                                    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw_process_id))
+                                    
+                                    # Check by PID
+                                    if lpdw_process_id.value == pid:
+                                        if ctypes.windll.user32.IsWindowVisible(hwnd):
+                                            ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
+                                            logger.info(f"Persistent Monitor: Hidden window for PID {pid}")
+                                            found = True
+                                            return False
+                                    
+                                    # Fallback: Check by Title (if PID fails or for child processes)
+                                    length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+                                    if length > 0:
+                                        buff = ctypes.create_unicode_buffer(length + 1)
+                                        ctypes.windll.user32.GetWindowTextW(hwnd, buff, length + 1)
+                                        title = buff.value.lower()
+                                        if "ngrok" in title: # Broad check for any ngrok window
+                                            if ctypes.windll.user32.IsWindowVisible(hwnd):
+                                                ctypes.windll.user32.ShowWindow(hwnd, 0)
+                                                logger.info(f"Persistent Monitor: Hidden window by title '{buff.value}'")
+                                                found = True
+                                                return False
+                                                
+                                    return True
+                                    
+                                CMPFUNC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+                                ctypes.windll.user32.EnumWindows(CMPFUNC(hide_window_callback), 0)
+                                
+                                # If found, we keep checking for a bit longer just in case, but maybe less frequently?
+                                # Actually, ngrok might open multiple windows or re-open? Unlikely.
+                                # But let's keep the loop running to be safe.
+                            except Exception as e:
+                                logger.error(f"Monitor error: {e}")
+                            time.sleep(0.5)
+                            
+                    if sys.platform == "win32" and 'pid' in locals():
+                        threading.Thread(target=_monitor_ngrok_window, args=(pid,), daemon=True).start()
                     
                     # Send Notification
                     if telegram_notifier:
+                        # [SYSTEM] Engine Started Account: (acc no) Equity: (amount） Symbols: (symbol)
+                        acc_no = "Unknown"
+                        equity = "Unknown"
+                        try:
+                            import MetaTrader5 as mt5
+                            acc_info = mt5.account_info()
+                            if acc_info:
+                                acc_no = acc_info.login
+                                equity = acc_info.equity
+                        except:
+                            pass
+                            
                         msg = (
-                            f"🚀 **AlphaQuant Engine Started**\n\n"
-                            f"🌍 **Remote Dashboard**: {public_url}\n"
-                            f"🔑 **Password**: {config.get('web_password', 'Not Set')}\n"
-                            f"📊 **Status**: Running\n"
-                            f"⚠️ *Note: This link expires when engine stops.*"
+                            f"[SYSTEM] Engine Started Account: {acc_no} Equity: {equity} Symbols: {config.get('symbol', 'XAUUSD')}\n"
+                            f"[Remote Dashboard]: {public_url}"
+                            f"[Password]: {config.get('web_password', 'Not Set')}\n"
                         )
                         telegram_notifier.send_message(msg)
                         
