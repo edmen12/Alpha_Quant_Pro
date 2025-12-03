@@ -63,8 +63,8 @@ datas.append((get_path('pandas'), 'pandas'))
 datas.append((get_path('matplotlib'), 'matplotlib'))
 datas.append((get_path('PIL'), 'PIL'))
 
-# Manual bundling of ONNX Runtime and XGBoost
-datas.append((get_path('onnxruntime'), 'onnxruntime'))
+# Manual bundling of ONNX Runtime and XGBoost - REMOVED (Using collect_all)
+# datas.append((get_path('onnxruntime'), 'onnxruntime'))
 datas.append((get_path('xgboost'), 'xgboost'))
 
 # Helper to safely add module (file or package)
@@ -135,8 +135,19 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pydantic')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
-# XGBoost binaries - Removed as we are manually bundling the whole package
-# binaries += collect_dynamic_libs('xgboost')
+# Robust AI Bundling (Fixes Access Violation)
+tmp_ret = collect_all('onnxruntime')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# tmp_ret = collect_all('xgboost')
+# datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# torch and sklearn via hiddenimports (collect_all was too heavy/unstable)
+# tmp_ret = collect_all('torch')
+# datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# tmp_ret = collect_all('sklearn')
+# datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 block_cipher = None
@@ -150,7 +161,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['customtkinter', 'setuptools', 'distutils', 'xgboost', 'onnxruntime', 'core', 'MetaTrader5', 'matplotlib', 'PIL', 'pandas'],
+    excludes=['customtkinter', 'setuptools', 'distutils', 'xgboost', 'core', 'MetaTrader5', 'matplotlib', 'PIL', 'pandas'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
