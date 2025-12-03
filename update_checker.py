@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # 应用版本信息
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.3.4"
 GITHUB_REPO = "edmen12/Alpha_Quant_Pro"  # GitHub 仓库
 CHECK_UPDATE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -54,6 +54,34 @@ class UpdateChecker:
                     if version.parse(self.latest_version) > version.parse(self.current_version):
                         self.update_available = True
                         logger.info(f"New version available: {self.latest_version}")
+                        
+                        # Auto-Download Installer
+                        installer_path = None
+                        try:
+                            assets = data.get("assets", [])
+                            # Find .exe asset
+                            exe_asset = next((a for a in assets if a["name"].endswith(".exe")), None)
+                            if exe_asset:
+                                download_url = exe_asset["browser_download_url"]
+                                logger.info(f"Downloading update from {download_url}...")
+                                
+                                import tempfile
+                                import os
+                                temp_dir = tempfile.gettempdir()
+                                # SECURITY FIX: Sanitize filename to prevent path traversal
+                                safe_filename = os.path.basename(exe_asset["name"])
+                                installer_path = os.path.join(temp_dir, safe_filename)
+                                
+                                with requests.get(download_url, stream=True) as r:
+                                    r.raise_for_status()
+                                    with open(installer_path, 'wb') as f:
+                                        for chunk in r.iter_content(chunk_size=8192):
+                                            f.write(chunk)
+                                logger.info(f"Update downloaded to {installer_path}")
+                                self.download_url = installer_path # Point to local file
+                        except Exception as e:
+                            logger.error(f"Failed to auto-download: {e}")
+                            # Fallback to browser URL
                     else:
                         logger.info("Already on latest version")
                     

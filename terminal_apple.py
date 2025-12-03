@@ -5,12 +5,13 @@ Design Philosophy: "OLED Black", "Super Ellipse", "Floating Interface"
 
 import os
 import sys
-sys.setrecursionlimit(5000)
+# sys.setrecursionlimit(5000) # Removed: Fixed underlying recursion issue
 import shutil
 from pathlib import Path
 import core.web_server
 import threading
 import time
+import tkinter as tk
 
 # Fix for embedded Python Tkinter
 # Use AppData for logging to avoid PermissionError in Program Files
@@ -1135,9 +1136,25 @@ class ViewChart(ctk.CTkFrame):
 class TerminalApple(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Alpha Quant Pro - iOS 26")
+        self.title("Alpha Quant Pro")
         self.geometry("1400x900")
         self.configure(fg_color=DS.BG_MAIN)
+        
+        # Set Icon
+        try:
+            if getattr(sys, 'frozen', False):
+                # Frozen: Icon is in the same directory or MEIPASS
+                icon_path = Path(sys.executable).parent / "terminal_icon.ico"
+                if not icon_path.exists():
+                    icon_path = Path(sys._MEIPASS) / "terminal_icon.ico"
+            else:
+                # Dev: Icon is in current directory
+                icon_path = Path("terminal_icon.ico")
+            
+            if icon_path.exists():
+                self.iconbitmap(str(icon_path))
+        except Exception as e:
+            logger.error(f"Failed to set icon: {e}")
         
         # Initialize state
         self.views = {}
@@ -1181,6 +1198,9 @@ class TerminalApple(ctk.CTk):
         # Auto-start Web Server if enabled
         if self.views["settings"].sw_web_enable.get():
             self.views["settings"]._toggle_web()
+
+        # Check Risk Disclaimer
+        self.after(100, self.check_risk_disclaimer)
 
         # Register Start Callback for Web Server
         core.web_server.start_callback = lambda: self.after(0, self._start)
@@ -1685,10 +1705,24 @@ class TerminalApple(ctk.CTk):
         
         def download_update():
             import webbrowser
-            webbrowser.open(download_url)
-            dialog.destroy()
+            import os
+            import subprocess
+            
+            if os.path.exists(download_url): # It's a local file
+                try:
+                    subprocess.Popen(download_url)
+                    dialog.destroy()
+                    self.destroy() # Close app to allow update
+                    sys.exit(0)
+                except Exception as e:
+                    logger.error(f"Failed to launch installer: {e}")
+                    webbrowser.open(download_url) # Fallback (unlikely to work for file path in browser)
+            else:
+                webbrowser.open(download_url)
+                dialog.destroy()
         
-        CapsuleButton(btn_frame, "立即下载", color=DS.ACCENT_BLUE, 
+        btn_text = "立即安装" if os.path.exists(download_url) else "立即下载"
+        CapsuleButton(btn_frame, btn_text, color=DS.ACCENT_BLUE, 
                      command=download_update).pack(side="left", expand=True, padx=5)
         CapsuleButton(btn_frame, "稍后提醒", color=DS.BG_ISLAND, 
                      text_color=DS.TEXT_SECONDARY,
@@ -1721,7 +1755,102 @@ class TerminalApple(ctk.CTk):
             return "🤖 <b>可用命令</b>\n\n/status - 查看系统状态\n/stop - 停止引擎\n/close_all - 平掉所有持仓\n/help - 显示此帮助信息\n\n--\nAlpha Quant Terminal"
         else: return f"❓ 未知命令: {command}\n\n发送 /help 查看可用命令"
 
+    def check_risk_disclaimer(self):
+        """Show Risk Disclaimer on startup if not accepted"""
+        config = ConfigManager.load()
+        if config.get("risk_accepted", False):
+            return
+
+        # Create Dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Risk Disclosure Statement")
+        dialog.geometry("600x500")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.transient(self)
+        dialog.grab_set() # Modal
+
+        # Center Dialog
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - (600 // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (500 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Content Frame
+        frame = ctk.CTkFrame(dialog, fg_color=DS.BG_MAIN)
+        frame.pack(fill="both", expand=True, padx=2, pady=2) # Thin border effect if dialog bg is different
+        
+        # Header
+        header_frame = ctk.CTkFrame(frame, fg_color=DS.BG_CARD, height=60)
+        header_frame.pack(fill="x", padx=20, pady=20)
+        
+        ctk.CTkLabel(header_frame, text="⚠️  RISK DISCLOSURE", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), 
+                     text_color=DS.ACCENT_RED).pack(side="left", padx=20, pady=15)
+        
+        # Load Text
+        try:
+            if getattr(sys, 'frozen', False):
+                base_dir = Path(sys.executable).parent
+                if not (base_dir / "RISK_DISCLAIMER.txt").exists():
+                     base_dir = Path(sys._MEIPASS)
+            else:
+                base_dir = Path.cwd()
+                
+            with open(base_dir / "RISK_DISCLAIMER.txt", "r", encoding="utf-8") as f:
+                disclaimer_text = f.read()
+        except Exception:
+            disclaimer_text = "Trading involves high risk. You could lose all your money.\n\n(Full disclaimer file missing)"
+
+        # Text Area
+        textbox = ctk.CTkTextbox(frame, font=ctk.CTkFont(family="Consolas", size=13), text_color=DS.TEXT_PRIMARY, fg_color=DS.BG_CARD)
+        textbox.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        textbox.insert("0.0", disclaimer_text)
+        textbox.configure(state="disabled")
+        
+        # Checkbox & Buttons
+        action_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        action_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        check_var = ctk.BooleanVar(value=False)
+        
+        def toggle_accept():
+            if check_var.get():
+                btn_accept.configure(state="normal", fg_color=DS.ACCENT_BLUE)
+            else:
+                btn_accept.configure(state="disabled", fg_color=DS.BG_ISLAND)
+
+        chk = ctk.CTkCheckBox(action_frame, text="I have read, understood, and accept the risks above.", 
+                             variable=check_var, command=toggle_accept,
+                             font=ctk.CTkFont(size=13), text_color=DS.TEXT_SECONDARY,
+                             fg_color=DS.ACCENT_BLUE, hover_color=DS.ACCENT_BLUE)
+        chk.pack(side="top", anchor="w", pady=(0, 15))
+        
+        def accept():
+            config["risk_accepted"] = True
+            ConfigManager.save(config)
+            dialog.destroy()
+            
+        def reject():
+            dialog.destroy()
+            self.destroy()
+            sys.exit(0)
+            
+        ctk.CTkButton(action_frame, text="EXIT APPLICATION", fg_color=DS.BG_ISLAND, text_color=DS.ACCENT_RED, 
+                     hover_color="#3A3A3C", width=120, command=reject).pack(side="left")
+                     
+        btn_accept = ctk.CTkButton(action_frame, text="CONTINUE", fg_color=DS.BG_ISLAND, text_color="white", 
+                                  state="disabled", width=120, command=accept)
+        btn_accept.pack(side="right")
+        
+        dialog.protocol("WM_DELETE_WINDOW", reject)
+        self.wait_window(dialog)
+
 if __name__ == "__main__":
     ctk.set_appearance_mode("Dark")
     app = TerminalApple()
-    app.mainloop()
+    try:
+        app.mainloop()
+    except (tk.TclError, KeyboardInterrupt, SystemExit):
+        pass
+    except Exception as e:
+        logger.error(f"Application crashed: {e}")

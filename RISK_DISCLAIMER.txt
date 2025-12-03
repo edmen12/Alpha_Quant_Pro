@@ -1,0 +1,33 @@
+RISK DISCLOSURE STATEMENT & LIABILITY DISCLAIMER
+Version 2.0 | Last Updated: December 2025
+
+IMPORTANT: READ CAREFULLY BEFORE USING ALPHA QUANT PRO
+
+1. GENERAL RISK WARNING
+Trading Foreign Exchange (Forex), Contracts for Difference (CFDs), and other financial instruments on margin carries a HIGH LEVEL OF RISK and may not be suitable for all investors. The high degree of leverage can work against you as well as for you. Before deciding to trade, you should carefully consider your investment objectives, level of experience, and risk appetite. The possibility exists that you could sustain a loss of some or all of your initial investment and therefore you should not invest money that you cannot afford to lose. You should be aware of all the risks associated with foreign exchange trading and seek advice from an independent financial advisor if you have any doubts.
+
+2. NO FINANCIAL ADVICE
+Alpha Quant Pro ("The Software") is an algorithmic trading tool designed for educational and automated execution purposes only. Neither the developers, distributors, nor any associated parties provide financial, investment, tax, or legal advice. No representation is being made that any account will or is likely to achieve profits or losses similar to those shown in simulations or past performance.
+
+3. ALGORITHMIC & SOFTWARE RISKS
+The use of automated trading systems involves specific risks, including but not limited to:
+   a) Technical Failures: Internet connectivity issues, power outages, hardware malfunctions, or broker server latency may result in failed execution or "zombie" orders.
+   b) Software Errors: While every effort has been made to ensure stability, software bugs, logic errors, or unhandled exceptions may occur.
+   c) Market Conditions: Extreme market volatility, slippage, and widening spreads (especially during news events) may cause the software to perform differently than in backtests.
+   d) Broker Dependencies: Differences in broker price feeds, execution speeds, and margin requirements can significantly affect performance.
+
+4. HYPOTHETICAL PERFORMANCE DISCLAIMER
+Hypothetical or simulated performance results have certain inherent limitations. Unlike an actual performance record, simulated results do not represent actual trading. Also, since the trades have not actually been executed, the results may have under- or over-compensated for the impact, if any, of certain market factors, such as lack of liquidity. No representation is being made that any account will or is likely to achieve profits or losses similar to those shown.
+
+5. LIMITATION OF LIABILITY
+By using this Software, you explicitly agree that:
+   a) You assume full responsibility for any trading losses, damages, or missed opportunities.
+   b) The developers and distributors shall NOT be held liable for any direct, indirect, incidental, special, or consequential damages resulting from the use or inability to use the Software.
+   c) You are responsible for monitoring the Software's operation and maintaining adequate account margin.
+
+6. ACKNOWLEDGEMENT
+By clicking "I ACCEPT" or using the Software, you acknowledge that you have read, understood, and agreed to this Risk Disclosure Statement. You confirm that you are aware of the risks involved in trading and are using this Software at your own risk.
+
+-----------------------------------------------------------------------
+IF YOU DO NOT AGREE WITH THESE TERMS, DO NOT USE THIS SOFTWARE.
+-----------------------------------------------------------------------

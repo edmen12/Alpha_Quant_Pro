@@ -9,54 +9,97 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dyn
 from PyInstaller.building.build_main import Analysis, PYZ, EXE, COLLECT
 
 # Collect dependencies
-datas = [('agents', 'agents'), ('core', 'core')]
+datas = [('agents', 'agents'), ('core', 'core'), ('web_ui', 'web_ui'), ('models', 'models'), ('configs', 'configs'), ('RISK_DISCLAIMER.txt', '.'), ('User_Manual.md', '.'), ('EULA.txt', '.'), ('terminal_icon.ico', '.')]
 binaries = []
-hiddenimports = ['onnxruntime', 'pandas', 'numpy', 'xgboost', 'yfinance', 'scipy', 'sklearn', 'torch', 'gymnasium', 'darkdetect', 'customtkinter', 'tkinter', 'tkinter.font', 'tkinter.ttk', 'plistlib', 'uuid', 'ctypes', 'platform', 'subprocess', 'xml', 'xml.etree.ElementTree', 'xml.parsers.expat', 'colorsys', 'mmap', 'sqlite3', 'multiprocessing']
+hiddenimports = ['uvicorn', 'fastapi', 'starlette', 'h11', 'click', 'onnxruntime', 'pandas', 'numpy', 'xgboost', 'yfinance', 'scipy', 'sklearn', 'torch', 'gymnasium', 'darkdetect', 'customtkinter', 'tkinter', 'tkinter.font', 'tkinter.ttk', 'plistlib', 'uuid', 'ctypes', 'platform', 'subprocess', 'xml', 'xml.etree.ElementTree', 'xml.parsers.expat', 'colorsys', 'mmap', 'sqlite3', 'multiprocessing', 'cloudscraper', 'bs4', 'cycler', 'kiwisolver', 'pyparsing', 'contourpy', 'fontTools', 'packaging', '_tkinter', 'pyngrok', 'requests', 'pydantic']
+
+# Dynamic path resolution
+import site
+import os
+
+# Get site-packages directories
+site_packages = site.getsitepackages()
+# Usually the first one is the main one, but we check
+base_site = site_packages[1] if len(site_packages) > 1 else site_packages[0]
+base_python = os.path.dirname(sys.executable) # Reliable way to find Python root
+
+print(f"Detected Python Root: {base_python}")
+print(f"Detected Site-Packages: {base_site}")
+
+# Helper to find path
+def get_path(relative_path, is_site_package=True):
+    if is_site_package:
+        return os.path.join(base_site, relative_path)
+    else:
+        return os.path.join(base_python, relative_path)
 
 # Manual customtkinter bundling
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\customtkinter', 'customtkinter'))
+datas.append((get_path('customtkinter'), 'customtkinter'))
 
 # Manual MetaTrader5 bundling
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\MetaTrader5', 'MetaTrader5'))
+datas.append((get_path('MetaTrader5'), 'MetaTrader5'))
 
 # Manual tkinter bundling
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\tkinter', 'tkinter'))
+# datas.append((get_path('tkinter', False), 'tkinter')) # tkinter is in Lib, not site-packages usually, but let's check
+# Actually tkinter is usually in Lib/tkinter, which is not in site-packages.
+# Let's be more robust.
+lib_path = os.path.join(base_python, 'Lib')
+datas.append((os.path.join(lib_path, 'tkinter'), 'tkinter'))
 
 # Manual bundling of _tkinter binary and Tcl/Tk DLLs
-binaries.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\DLLs\_tkinter.pyd', '.'))
-binaries.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\DLLs\tcl86t.dll', '.'))
-binaries.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\DLLs\tk86t.dll', '.'))
+dlls_path = os.path.join(base_python, 'DLLs')
+binaries.append((os.path.join(dlls_path, '_tkinter.pyd'), '.'))
+binaries.append((os.path.join(dlls_path, 'tcl86t.dll'), '.'))
+binaries.append((os.path.join(dlls_path, 'tk86t.dll'), '.'))
 
-# Manual bundling of Tcl/Tk data directories (Required for initialization)
+# Manual bundling of Tcl/Tk data directories
+tcl_path = os.path.join(base_python, 'tcl')
+datas.append((os.path.join(tcl_path, 'tcl8.6'), 'tcl/tcl8.6'))
+datas.append((os.path.join(tcl_path, 'tk8.6'), 'tcl/tk8.6'))
 
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\tcl\tcl8.6', 'tcl/tcl8.6'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\tcl\tk8.6', 'tcl/tk8.6'))
+# Manual bundling of Pandas
+datas.append((get_path('pandas'), 'pandas'))
 
-# Manual bundling of Pandas (Nuclear Option for dependencies)
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\pandas', 'pandas'))
+# Manual bundling of Matplotlib and PIL
+datas.append((get_path('matplotlib'), 'matplotlib'))
+datas.append((get_path('PIL'), 'PIL'))
 
-# Manual bundling of Matplotlib and PIL (Nuclear Option v3)
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\matplotlib', 'matplotlib'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\PIL', 'PIL'))
+# Manual bundling of ONNX Runtime and XGBoost
+datas.append((get_path('onnxruntime'), 'onnxruntime'))
+datas.append((get_path('xgboost'), 'xgboost'))
 
-# Manual bundling of ONNX Runtime and XGBoost (Nuclear Option v4)
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\onnxruntime', 'onnxruntime'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\xgboost', 'xgboost'))
+# Helper to safely add module (file or package)
+def safe_add_module(name):
+    # Try as file
+    file_path = get_path(f"{name}.py")
+    if os.path.exists(file_path):
+        datas.append((file_path, '.'))
+        print(f"Bundled module file: {name}.py")
+        return
 
-# Manual bundling of Matplotlib dependencies (Nuclear Option v5 - Fix 'cycler' error)
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\cycler', 'cycler'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\kiwisolver', 'kiwisolver'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\pyparsing', 'pyparsing'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\contourpy', 'contourpy'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\fontTools', 'fontTools'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\packaging', 'packaging'))
+    # Try as package
+    dir_path = get_path(name)
+    if os.path.exists(dir_path):
+        datas.append((dir_path, name))
+        print(f"Bundled module package: {name}")
+        return
+        
+    print(f"WARNING: Could not find module {name}")
 
+# Manual bundling of Matplotlib dependencies
+# Moved to hiddenimports to avoid path issues
+# safe_add_module('cycler')
+# safe_add_module('kiwisolver')
+# safe_add_module('pyparsing')
+# safe_add_module('contourpy')
+# safe_add_module('fontTools')
+# safe_add_module('packaging')
 
-# Manual bundling of ONNX Runtime dependencies (Nuclear Option v6 - Deep Audit)
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\protobuf', 'google/protobuf'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\flatbuffers', 'flatbuffers'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\coloredlogs', 'coloredlogs'))
-datas.append((r'C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sympy', 'sympy'))
+# Manual bundling of ONNX Runtime dependencies
+datas.append((get_path('google/protobuf'), 'google/protobuf'))
+datas.append((get_path('flatbuffers'), 'flatbuffers'))
+datas.append((get_path('coloredlogs'), 'coloredlogs'))
+datas.append((get_path('sympy'), 'sympy'))
 
 # Collect others
 tmp_ret = collect_all('stable_baselines3')
@@ -74,6 +117,25 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pytz')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+tmp_ret = collect_all('uvicorn')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+tmp_ret = collect_all('fastapi')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+tmp_ret = collect_all('starlette')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# Deep Audit: Force collection of missing dependencies
+tmp_ret = collect_all('pyngrok')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+tmp_ret = collect_all('requests')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+tmp_ret = collect_all('pydantic')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
 # XGBoost binaries - Removed as we are manually bundling the whole package
 # binaries += collect_dynamic_libs('xgboost')
 
@@ -89,7 +151,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['customtkinter', 'setuptools', 'pkg_resources', 'distutils', 'xgboost', 'onnxruntime', 'core', 'MetaTrader5', 'matplotlib', 'PIL', 'pandas', 'tkinter'],
+    excludes=['customtkinter', 'setuptools', 'distutils', 'xgboost', 'onnxruntime', 'core', 'MetaTrader5', 'matplotlib', 'PIL', 'pandas'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -106,14 +168,14 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='Alpha_Quant_Pro_logo.ico',
+    icon='terminal_icon.ico',
 )
 coll = COLLECT(
     exe,

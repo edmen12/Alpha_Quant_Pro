@@ -60,40 +60,9 @@ class NewsCalendar:
             rows = soup.find_all('tr', class_='calendar__row')
             
             for row in rows:
-                # Check if high impact (red folder icon)
-                impact = row.find('td', class_='calendar__impact')
-                if not impact or 'icon--ff-impact-red' not in str(impact):
-                    continue
-                
-                # Extract time
-                time_cell = row.find('td', class_='calendar__time')
-                if not time_cell:
-                    continue
-                    
-                time_str = time_cell.get_text(strip=True)
-                if not time_str or time_str == 'All Day':
-                    continue
-                
-                # Extract event name
-                event_cell = row.find('td', class_='calendar__event')
-                event_name = event_cell.get_text(strip=True) if event_cell else 'Unknown'
-                
-                # Parse time (ForexFactory uses GMT)
-                try:
-                    event_time = datetime.strptime(time_str, '%I:%M%p')
-                    # Combine with today's date
-                    today = datetime.now(pytz.UTC).date()
-                    event_datetime = datetime.combine(today, event_time.time())
-                    event_datetime = pytz.UTC.localize(event_datetime)
-                    
-                    events.append({
-                        'name': event_name,
-                        'time': event_datetime,
-                        'impact': 'High'
-                    })
-                except Exception as e:
-                    logger.warning(f"Failed to parse event time '{time_str}': {e}")
-                    continue
+                event = self._parse_forexfactory_row(row)
+                if event:
+                    events.append(event)
             
             self.events = events
             self.last_update = datetime.now()
@@ -103,9 +72,44 @@ class NewsCalendar:
             
         except Exception as e:
             logger.error(f"Failed to fetch news calendar: {e}")
-            # On error, clear events to allow trading (fail-safe)
+            # Fail-Safe: If scraping fails, we should NOT block trading indefinitely, 
+            # but we also can't protect against news. 
+            # Strategy: Log error, clear events (allow trading), but maybe set a flag?
+            # For now, clearing events ensures we don't crash the main loop.
             self.events = []
             return []
+            
+    def _parse_forexfactory_row(self, row):
+        """Helper to parse a single row safely"""
+        try:
+            # Check impact
+            impact = row.find('td', class_='calendar__impact')
+            if not impact or 'icon--ff-impact-red' not in str(impact):
+                return None
+                
+            # Check time
+            time_cell = row.find('td', class_='calendar__time')
+            if not time_cell: return None
+            time_str = time_cell.get_text(strip=True)
+            if not time_str or time_str == 'All Day': return None
+            
+            # Check event name
+            event_cell = row.find('td', class_='calendar__event')
+            event_name = event_cell.get_text(strip=True) if event_cell else 'Unknown'
+            
+            # Parse time
+            event_time = datetime.strptime(time_str, '%I:%M%p')
+            today = datetime.now(pytz.UTC).date()
+            event_datetime = datetime.combine(today, event_time.time())
+            event_datetime = pytz.UTC.localize(event_datetime)
+            
+            return {
+                'name': event_name,
+                'time': event_datetime,
+                'impact': 'High'
+            }
+        except Exception:
+            return None
     
     def is_trading_allowed(self, current_time=None):
         """

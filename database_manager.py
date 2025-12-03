@@ -12,6 +12,8 @@ from path_manager import PathManager
 
 logger = logging.getLogger(__name__)
 
+import threading
+
 class DatabaseManager:
     """
     数据库管理器 (Database Manager)
@@ -39,12 +41,41 @@ class DatabaseManager:
             
         # Ensure directory exists
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Cloud Sync Risk Check
+        self._check_cloud_sync_risk(self.db_path)
+        
+        # Auto-Backup on Startup
+        self._backup_db()
+        
+        # Thread Lock for Write Operations
+        self.lock = threading.Lock()
             
         self._init_db()
         
+    def _check_cloud_sync_risk(self, path_str):
+        """Check if DB is in a cloud sync folder (OneDrive/Dropbox)"""
+        path_lower = path_str.lower()
+        if "onedrive" in path_lower or "dropbox" in path_lower or "google drive" in path_lower:
+            logger.warning(f"⚠️ DATABASE RISK: Database is located in a Cloud Sync folder: {path_str}")
+            logger.warning("This may cause file lock issues or corruption. Please move the workspace.")
+
+    def _backup_db(self):
+        """Create a backup of the database file"""
+        try:
+            db_file = Path(self.db_path)
+            if db_file.exists():
+                import shutil
+                backup_path = db_file.with_suffix('.db.bak')
+                shutil.copy2(db_file, backup_path)
+                logger.info(f"Database backup created: {backup_path}")
+        except Exception as e:
+            logger.error(f"Failed to backup database: {e}")
+        
     def _get_connection(self):
         """Get SQLite connection with row factory"""
-        conn = sqlite3.connect(self.db_path)
+        # check_same_thread=False allows sharing connection across threads (with manual locking)
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
         
@@ -94,39 +125,40 @@ class DatabaseManager:
         Args:
             trade_data: Dictionary containing trade details
         """
-        try:
-            # Prepare extra data (strategy state)
-            extra_data = {
-                k: v for k, v in trade_data.items() 
-                if k not in ['ticket', 'symbol', 'type', 'volume', 'price_open', 'time', 'sl', 'tp', 'magic', 'comment']
-            }
-            
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                INSERT OR REPLACE INTO trades (
-                    ticket, symbol, type, lot_size, open_price, open_time, 
-                    sl, tp, status, magic_number, comment, extra_data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    trade_data['ticket'],
-                    trade_data['symbol'],
-                    trade_data['type'],
-                    trade_data['volume'],
-                    trade_data['price_open'],
-                    trade_data.get('time', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-                    trade_data.get('sl', 0.0),
-                    trade_data.get('tp', 0.0),
-                    'OPEN',
-                    trade_data.get('magic', 0),
-                    trade_data.get('comment', ''),
-                    json.dumps(extra_data)
-                ))
-                conn.commit()
-                logger.info(f"Trade saved: {trade_data['ticket']}")
+        with self.lock:
+            try:
+                # Prepare extra data (strategy state)
+                extra_data = {
+                    k: v for k, v in trade_data.items() 
+                    if k not in ['ticket', 'symbol', 'type', 'volume', 'price_open', 'time', 'sl', 'tp', 'magic', 'comment']
+                }
                 
-        except Exception as e:
-            logger.error(f"Failed to save trade {trade_data.get('ticket')}: {e}")
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                    INSERT OR REPLACE INTO trades (
+                        ticket, symbol, type, lot_size, open_price, open_time, 
+                        sl, tp, status, magic_number, comment, extra_data
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        trade_data['ticket'],
+                        trade_data['symbol'],
+                        trade_data['type'],
+                        trade_data['volume'],
+                        trade_data['price_open'],
+                        trade_data.get('time', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+                        trade_data.get('sl', 0.0),
+                        trade_data.get('tp', 0.0),
+                        'OPEN',
+                        trade_data.get('magic', 0),
+                        trade_data.get('comment', ''),
+                        json.dumps(extra_data)
+                    ))
+                    conn.commit()
+                    logger.info(f"Trade saved: {trade_data['ticket']}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to save trade {trade_data.get('ticket')}: {e}")
 
     def update_trade(self, ticket: int, updates: Dict[str, Any]):
         """
@@ -134,53 +166,60 @@ class DatabaseManager:
         
         用于更新 SL/TP, Partial Close 状态等。
         """
-        try:
-            # Separate standard columns from extra_data
-            columns = ['sl', 'tp', 'close_price', 'close_time', 'profit', 'status']
-            std_updates = {k: v for k, v in updates.items() if k in columns}
-            extra_updates = {k: v for k, v in updates.items() if k not in columns}
-            
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
+        with self.lock:
+            try:
+                # Separate standard columns from extra_data
+                columns = ['sl', 'tp', 'close_price', 'close_time', 'profit', 'status']
+                std_updates = {k: v for k, v in updates.items() if k in columns}
+                extra_updates = {k: v for k, v in updates.items() if k not in columns}
                 
-                # Update standard columns
-                if std_updates:
-                    set_clause = ", ".join([f"{k} = ?" for k in std_updates.keys()])
-                    values = list(std_updates.values())
-                    values.append(ticket)
-                    cursor.execute(f"UPDATE trades SET {set_clause} WHERE ticket = ?", values)
-                
-                # Update extra_data if needed
-                if extra_updates:
-                    # First fetch existing extra_data
-                    cursor.execute("SELECT extra_data FROM trades WHERE ticket = ?", (ticket,))
-                    row = cursor.fetchone()
-                    if row:
-                        current_extra = json.loads(row['extra_data']) if row['extra_data'] else {}
-                        current_extra.update(extra_updates)
-                        cursor.execute("UPDATE trades SET extra_data = ? WHERE ticket = ?", 
-                                     (json.dumps(current_extra), ticket))
-                
-                conn.commit()
-                # logger.debug(f"Trade updated: {ticket}")
-                
-        except Exception as e:
-            logger.error(f"Failed to update trade {ticket}: {e}")
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    
+                    # Update standard columns
+                    if std_updates:
+                        set_clause = ", ".join([f"{k} = ?" for k in std_updates.keys()])
+                        values = list(std_updates.values())
+                        values.append(ticket)
+                        cursor.execute(f"UPDATE trades SET {set_clause} WHERE ticket = ?", values)
+                    
+                    # Update extra_data if needed
+                    if extra_updates:
+                        # First fetch existing extra_data
+                        cursor.execute("SELECT extra_data FROM trades WHERE ticket = ?", (ticket,))
+                        row = cursor.fetchone()
+                        if row:
+                            current_extra = json.loads(row['extra_data']) if row['extra_data'] else {}
+                            current_extra.update(extra_updates)
+                            cursor.execute("UPDATE trades SET extra_data = ? WHERE ticket = ?", 
+                                         (json.dumps(current_extra), ticket))
+                    
+                    conn.commit()
+                    # logger.debug(f"Trade updated: {ticket}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to update trade {ticket}: {e}")
 
-    def close_trade(self, ticket: int, close_price: float, profit: float, close_time: str = None):
+    def close_trade(self, ticket: int, close_price: float, profit: float):
         """
-        标记交易为已平仓 (Mark Trade as Closed)
+        关闭交易 (Close Trade)
+        
+        Mark trade as CLOSED and update final metrics.
         """
-        if close_time is None:
-            close_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            
-        self.update_trade(ticket, {
-            'status': 'CLOSED',
-            'close_price': close_price,
-            'profit': profit,
-            'close_time': close_time
-        })
-        logger.info(f"Trade closed in DB: {ticket}, Profit: {profit}")
+        with self.lock:
+            try:
+                close_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                    UPDATE trades 
+                    SET status = 'CLOSED', close_price = ?, profit = ?, close_time = ?
+                    WHERE ticket = ?
+                    """, (close_price, profit, close_time, ticket))
+                    conn.commit()
+                    logger.info(f"Trade closed in DB: {ticket} (P/L: {profit:.2f})")
+            except Exception as e:
+                logger.error(f"Failed to close trade {ticket}: {e}")
 
     def get_active_trades(self) -> List[Dict]:
         """

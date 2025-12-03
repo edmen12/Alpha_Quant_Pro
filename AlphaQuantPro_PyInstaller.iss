@@ -1,5 +1,5 @@
 #define MyAppName "Alpha Quant Pro"
-#define MyAppVersion "1.3.3"
+#define MyAppVersion "1.3.5"
 #define MyAppPublisher "Alpha Quant"
 #define MyAppURL "https://github.com/edmen12/Alpha_Quant_Pro"
 #define MyAppExeName "AlphaQuantPro.exe"
@@ -17,11 +17,12 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
+LicenseFile=EULA.txt
 ; Industry Standard: Install to Program Files (requires admin)
 PrivilegesRequired=admin
 OutputDir=Installer
 OutputBaseFilename=AlphaQuantPro_Setup
-SetupIconFile=Alpha_Quant_Pro_logo.ico
+SetupIconFile=terminal_icon.ico
 Compression=lzma2/fast
 SolidCompression=no
 WizardStyle=modern
@@ -42,6 +43,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\User_Manual.md"; Description: "View User Manual"; Flags: postinstall shellexec skipifsilent unchecked
 
 [Dirs]
 ; Create AppData directories if needed (optional, app creates them)

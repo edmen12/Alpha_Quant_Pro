@@ -1,0 +1,26 @@
+END USER LICENSE AGREEMENT (EULA) FOR ALPHA QUANT PRO
+
+IMPORTANT: PLEASE READ THIS LICENSE CAREFULLY BEFORE USING THIS SOFTWARE.
+
+1. LICENSE GRANT
+Alpha Quant Pro ("Licensor") grants you a revocable, non-exclusive, non-transferable, limited license to download, install, and use the Application solely for your personal, non-commercial purposes strictly in accordance with the terms of this Agreement.
+
+2. RESTRICTIONS
+You agree not to, and you will not permit others to:
+a) License, sell, rent, lease, assign, distribute, transmit, host, outsource, disclose, or otherwise commercially exploit the Application or make the Application available to any third party.
+b) Modify, make derivative works of, disassemble, decrypt, reverse compile, or reverse engineer any part of the Application.
+c) Remove, alter, or obscure any proprietary notice (including any notice of copyright or trademark) of Licensor or its affiliates, partners, suppliers, or the licensors of the Application.
+
+3. RISK DISCLOSURE
+Trading foreign exchange (Forex), CFDs, and other financial instruments on margin carries a high level of risk and may not be suitable for all investors. The high degree of leverage can work against you as well as for you. Before deciding to trade, you should carefully consider your investment objectives, level of experience, and risk appetite. The possibility exists that you could sustain a loss of some or all of your initial investment and therefore you should not invest money that you cannot afford to lose.
+
+4. NO FINANCIAL ADVICE
+The Application provides algorithmic analysis and trading tools. It does NOT provide financial, investment, legal, or tax advice. All signals and analysis are for informational purposes only. You are solely responsible for your trading decisions.
+
+5. LIMITATION OF LIABILITY
+In no event shall Licensor be liable for any special, incidental, indirect, or consequential damages whatsoever (including, but not limited to, damages for loss of profits, loss of data, or any other pecuniary loss) arising out of the use of or inability to use the Application, even if Licensor has been advised of the possibility of such damages.
+
+6. TERMINATION
+This Agreement is effective until terminated. Your rights under this Agreement will terminate automatically without notice from Licensor if you fail to comply with any term(s) of this Agreement. Upon termination of the Agreement, you shall cease all use of the Application and delete all copies of the Application from your mobile device or computer.
+
+By clicking "I Agree" or installing the software, you acknowledge that you have read this Agreement, understand it, and agree to be bound by its terms.

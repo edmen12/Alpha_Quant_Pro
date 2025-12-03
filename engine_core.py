@@ -118,7 +118,10 @@ class TradingEngine:
         self.telegram = telegram_notifier
 
         # Asyncio Executor for blocking tasks (MT5, Neural Net)
-        self.executor = ThreadPoolExecutor(max_workers=1) # MT5 is not thread-safe, use 1 worker for safety
+        # Asyncio Executor for blocking tasks
+        # MT5 is not thread-safe, so we use a Lock for MT5 calls, but allow multiple workers for other tasks (e.g. Model Inference)
+        self.executor = ThreadPoolExecutor(max_workers=4) 
+        self.mt5_lock = threading.Lock()
 
         # Analytics Cache
         self.analytics_cache = None
@@ -310,7 +313,8 @@ class TradingEngine:
         target_symbol = symbol if symbol else self.symbols[0]
     def get_history(self, n=300, symbol=None):
         target_symbol = symbol if symbol else self.symbols[0]
-        rates = mt5.copy_rates_from_pos(target_symbol, self.mt5_timeframe, 0, n)
+        with self.mt5_lock:
+            rates = mt5.copy_rates_from_pos(target_symbol, self.mt5_timeframe, 0, n)
         if rates is None: return pd.DataFrame()
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
@@ -331,12 +335,13 @@ class TradingEngine:
 
     def get_open_positions(self, symbol=None):
         """Get all open positions for the specified symbol (or all if None)"""
-        if not mt5.terminal_info(): return []
-        
-        if symbol:
-            positions = mt5.positions_get(symbol=symbol)
-        else:
-            positions = mt5.positions_get()
+        with self.mt5_lock:
+            if not mt5.terminal_info(): return []
+            
+            if symbol:
+                positions = mt5.positions_get(symbol=symbol)
+            else:
+                positions = mt5.positions_get()
             
         if positions is None: return []
         
@@ -376,9 +381,12 @@ class TradingEngine:
 
                 # We only care about OUT deals (Closing trades) or IN/OUT for full history
                 # Usually users want to see closed PnL, so ENTRY_OUT
+                # We only care about OUT deals (Closing trades) or IN/OUT for full history
+                # Usually users want to see closed PnL, so ENTRY_OUT
                 if d.entry == mt5.DEAL_ENTRY_OUT: 
                     # Find Open Price from Entry Deal
                     open_price = 0.0
+                    entry_type = None
                     try:
                         if d.position_id > 0:
                             # Get deals for this position to find the entry
@@ -387,15 +395,25 @@ class TradingEngine:
                                 for p_deal in pos_deals:
                                     if p_deal.entry == mt5.DEAL_ENTRY_IN:
                                         open_price = p_deal.price
+                                        entry_type = p_deal.type
                                         break
                     except:
                         pass
+
+                    # Determine display type (Original Position Type)
+                    if entry_type is not None:
+                        display_type = 'BUY' if entry_type == 0 else 'SELL'
+                    else:
+                        # Fallback: Invert closing deal type
+                        # Closing Deal SELL (1) -> Original Position BUY
+                        # Closing Deal BUY (0) -> Original Position SELL
+                        display_type = 'BUY' if d.type == 1 else 'SELL'
 
                     history.append({
                         'ticket': d.ticket,
                         'symbol': d.symbol,
                         'time': datetime.fromtimestamp(d.time).strftime('%Y-%m-%d %H:%M:%S'),
-                        'type': 'BUY' if d.type == 0 else 'SELL',
+                        'type': display_type,
                         'volume': d.volume,
                         'price': d.price,
                         'open_price': open_price,
@@ -518,130 +536,127 @@ class TradingEngine:
 
 
     def execute_trade(self, symbol, action, sl=None, tp=None):
-        volume = float(self.lot_size)
-        
-        # Dynamic Position Sizing
-        if self.use_risk_based_sizing and sl:
-            try:
-                account = mt5.account_info()
-                if account:
-                    balance = account.balance
-                    risk_amount = balance * self.risk_percent
-                    
-                    entry_price = mt5.symbol_info_tick(symbol).ask if action == "BUY" else mt5.symbol_info_tick(symbol).bid
-                    dist = abs(entry_price - sl)
-                    
-                    if dist > 0:
-                        # Formula: Risk = Volume * ContractSize * PriceDist
-                        # Volume = Risk / (ContractSize * PriceDist)
-                        # Assuming ContractSize = 100 (Standard Gold Lot)
-                        calc_volume = risk_amount / (100 * dist)
+        with self.mt5_lock:
+            volume = float(self.lot_size)
+            
+            # Dynamic Position Sizing
+            if self.use_risk_based_sizing and sl:
+                try:
+                    account = mt5.account_info()
+                    if account:
+                        balance = account.balance
+                        risk_amount = balance * self.risk_percent
                         
-                        # Round to 2 decimals and clamp
-                        calc_volume = round(calc_volume, 2)
-                        calc_volume = max(0.01, min(calc_volume, 10.0))
+                        entry_price = mt5.symbol_info_tick(symbol).ask if action == "BUY" else mt5.symbol_info_tick(symbol).bid
+                        dist = abs(entry_price - sl)
                         
-                        self.log(f"Dynamic Sizing: Balance=${balance:.0f} Risk={self.risk_percent*100}% SL_Dist={dist:.2f} -> Vol={calc_volume}")
-                        volume = calc_volume
-            except Exception as e:
-                self.log(f"Sizing Error: {e}. Using default lot.")
+                        if dist > 0:
+                            # Formula: Risk = Volume * ContractSize * PriceDist
+                            # Volume = Risk / (ContractSize * PriceDist)
+                            # Assuming ContractSize = 100 (Standard Gold Lot)
+                            calc_volume = risk_amount / (100 * dist)
+                            
+                            # Round to 2 decimals and clamp
+                            calc_volume = round(calc_volume, 2)
+                            calc_volume = max(0.01, min(calc_volume, 10.0))
+                            
+                            self.log(f"Dynamic Sizing: Balance=${balance:.0f} Risk={self.risk_percent*100}% SL_Dist={dist:.2f} -> Vol={calc_volume}")
+                            volume = calc_volume
+                except Exception as e:
+                    self.log(f"Sizing Error: {e}. Using default lot.")
 
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
-            "volume": volume,
-            "type": mt5.ORDER_TYPE_BUY if action == "BUY" else mt5.ORDER_TYPE_SELL,
-            "price": mt5.symbol_info_tick(symbol).ask if action == "BUY" else mt5.symbol_info_tick(symbol).bid,
-            "deviation": self.deviation,
-            "magic": self.magic_number,
-            "comment": "AlphaEngine",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        }
-        if sl: request["sl"] = sl
-        if tp: request["tp"] = tp
-        
-        result = mt5.order_send(request)
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            self.log(f"Order Failed: {result.comment}")
-            self._send_formatted_alert("ERROR", type=action, symbol=symbol, volume=volume, reason=result.comment)
-        else:
-            self.log(f"Order Executed: {action} {volume} Lots @ {request['price']}")
-            self._send_formatted_alert("OPEN", type=action, symbol=symbol, volume=volume, price=request['price'], sl=sl, tp=tp, id=result.order)
-            # Save to DB
-            if result.order:
-                trade_dict = {
-                    'ticket': result.order,
-                    'symbol': symbol,
-                    'type': action,
-                    'volume': volume,
-                    'price_open': request['price'],
-                    'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'sl': sl if sl else 0.0,
-                    'tp': tp if tp else 0.0,
-                    'magic': self.magic_number,
-                    'comment': request['comment']
-                }
-                self.db.save_trade(trade_dict)
-        return result
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": volume,
+                "type": mt5.ORDER_TYPE_BUY if action == "BUY" else mt5.ORDER_TYPE_SELL,
+                "price": mt5.symbol_info_tick(symbol).ask if action == "BUY" else mt5.symbol_info_tick(symbol).bid,
+                "deviation": self.deviation,
+                "magic": self.magic_number,
+                "comment": "AlphaEngine",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+            if sl: request["sl"] = sl
+            if tp: request["tp"] = tp
+            
+            result = mt5.order_send(request)
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                self.log(f"Order Failed: {result.comment}")
+                self._send_formatted_alert("ERROR", type=action, symbol=symbol, volume=volume, reason=result.comment)
+            else:
+                self.log(f"Order Executed: {action} {volume} Lots @ {request['price']}")
+                self._send_formatted_alert("OPEN", type=action, symbol=symbol, volume=volume, price=request['price'], sl=sl, tp=tp, id=result.order)
+                # Save to DB
+                if result.order:
+                    trade_dict = {
+                        'ticket': result.order,
+                        'symbol': symbol,
+                        'type': action,
+                        'volume': volume,
+                        'price_open': request['price'],
+                        'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'sl': sl if sl else 0.0,
+                        'tp': tp if tp else 0.0,
+                        'magic': self.magic_number,
+                        'comment': request['comment']
+                    }
+                    self.db.save_trade(trade_dict)
+            return result
     
     def update_trailing_stops(self, symbol):
         """
         更新追踪止损 (Server-side Trailing Stop)
-        
-        逻辑:
-        - BUY: 价格上涨时，SL 向上移动，保持 trailing_distance 的距离。永远不向下移动。
-        - SELL: 价格下跌时，SL 向下移动，保持 trailing_distance 的距离。永远不向上移动。
-        - 目的: 锁定浮动利润，保护仓位免受反转影响。
         """
         if not self.trailing_enabled:
             return
         
-        try:
-            positions = mt5.positions_get(symbol=symbol)
-            if not positions:
-                return
-            
-            symbol_info = mt5.symbol_info(symbol)
-            if not symbol_info:
-                return
-            
-            point = symbol_info.point
-            
-            for pos in positions:
-                # Calculate new SL based on trailing logic
-                tick = mt5.symbol_info_tick(symbol)
-                if not tick:
-                    continue
+        with self.mt5_lock:
+            try:
+                positions = mt5.positions_get(symbol=symbol)
+                if not positions:
+                    return
                 
-                new_sl = None
+                symbol_info = mt5.symbol_info(symbol)
+                if not symbol_info:
+                    return
                 
-                if pos.type == mt5.POSITION_TYPE_BUY:
-                    # BUY: Trail stop upward
-                    current_price = tick.bid
-                    profit_points = (current_price - pos.price_open) / point
+                point = symbol_info.point
+                
+                for pos in positions:
+                    # Calculate new SL based on trailing logic
+                    tick = mt5.symbol_info_tick(symbol)
+                    if not tick:
+                        continue
                     
-                    if profit_points >= self.trailing_distance:
-                        new_sl = current_price - (self.trailing_distance * point)
-                        
-                        # Only move SL up, never down
-                        if pos.sl == 0 or new_sl > pos.sl:
-                            self._modify_position_sl(pos.ticket, new_sl, symbol)
-                
-                elif pos.type == mt5.POSITION_TYPE_SELL:
-                    # SELL: Trail stop downward
-                    current_price = tick.ask
-                    profit_points = (pos.price_open - current_price) / point
+                    new_sl = None
                     
-                    if profit_points >= self.trailing_distance:
-                        new_sl = current_price + (self.trailing_distance * point)
+                    if pos.type == mt5.POSITION_TYPE_BUY:
+                        # BUY: Trail stop upward
+                        current_price = tick.bid
+                        profit_points = (current_price - pos.price_open) / point
                         
-                        # Only move SL down, never up
-                        if pos.sl == 0 or new_sl < pos.sl:
-                            self._modify_position_sl(pos.ticket, new_sl, symbol)
-        
-        except Exception as e:
-            logger.info(f"Trailing Stop Error: {e}")
+                        if profit_points >= self.trailing_distance:
+                            new_sl = current_price - (self.trailing_distance * point)
+                            
+                            # Only move SL up, never down
+                            if pos.sl == 0 or new_sl > pos.sl:
+                                self._modify_position_sl(pos.ticket, new_sl, symbol)
+                    
+                    elif pos.type == mt5.POSITION_TYPE_SELL:
+                        # SELL: Trail stop downward
+                        current_price = tick.ask
+                        profit_points = (pos.price_open - current_price) / point
+                        
+                        if profit_points >= self.trailing_distance:
+                            new_sl = current_price + (self.trailing_distance * point)
+                            
+                            # Only move SL down, never up
+                            if pos.sl == 0 or new_sl < pos.sl:
+                                self._modify_position_sl(pos.ticket, new_sl, symbol)
+            
+            except Exception as e:
+                logger.info(f"Trailing Stop Error: {e}")
     
     def _modify_position_sl(self, ticket, new_sl, symbol):
         """Modify position's stop loss"""
@@ -680,59 +695,53 @@ class TradingEngine:
     def check_partial_close(self, symbol):
         """
         检查分批止盈 (Partial Close Check)
-        
-        逻辑:
-        1. 遍历所有持仓
-        2. 计算当前浮动盈利点数
-        3. 如果盈利 >= tp1_distance 且尚未分批平仓:
-           - 平掉指定百分比 (partial_close_percent) 的仓位
-           - 将剩余仓位的 SL 移动到开仓价 (Break Even)
         """
         if not self.partial_close_enabled:
             return
         
-        try:
-            positions = mt5.positions_get(symbol=symbol)
-            if not positions:
-                return
-            
-            symbol_info = mt5.symbol_info(symbol)
-            if not symbol_info:
-                return
-            
-            point = symbol_info.point
-            
-            for pos in positions:
-                # Skip if already partially closed
-                if pos.ticket in self.partially_closed_tickets:
-                    continue
+        with self.mt5_lock:
+            try:
+                positions = mt5.positions_get(symbol=symbol)
+                if not positions:
+                    return
                 
-                # Calculate profit in points
-                tick = mt5.symbol_info_tick(symbol)
-                if not tick:
-                    continue
+                symbol_info = mt5.symbol_info(symbol)
+                if not symbol_info:
+                    return
                 
-                if pos.type == mt5.POSITION_TYPE_BUY:
-                    current_price = tick.bid
-                    profit_points = (current_price - pos.price_open) / point
-                elif pos.type == mt5.POSITION_TYPE_SELL:
-                    current_price = tick.ask
-                    profit_points = (pos.price_open - current_price) / point
-                else:
-                    continue
+                point = symbol_info.point
                 
-                # Check if TP1 reached
-                if profit_points >= self.tp1_distance:
-                    # Double check history to ensure we haven't already partially closed this ticket
-                    # This prevents re-triggering after engine restart
-                    if self._has_partial_close_history(pos.ticket):
-                        self.partially_closed_tickets.add(pos.ticket)
+                for pos in positions:
+                    # Skip if already partially closed
+                    if pos.ticket in self.partially_closed_tickets:
                         continue
-                        
-                    self._execute_partial_close(pos, symbol)
-        
-        except Exception as e:
-            self.log(f"Partial Close Check Error: {e}")
+                    
+                    # Calculate profit in points
+                    tick = mt5.symbol_info_tick(symbol)
+                    if not tick:
+                        continue
+                    
+                    if pos.type == mt5.POSITION_TYPE_BUY:
+                        current_price = tick.bid
+                        profit_points = (current_price - pos.price_open) / point
+                    elif pos.type == mt5.POSITION_TYPE_SELL:
+                        current_price = tick.ask
+                        profit_points = (pos.price_open - current_price) / point
+                    else:
+                        continue
+                    
+                    # Check if TP1 reached
+                    if profit_points >= self.tp1_distance:
+                        # Double check history to ensure we haven't already partially closed this ticket
+                        # This prevents re-triggering after engine restart
+                        if self._has_partial_close_history(pos.ticket):
+                            self.partially_closed_tickets.add(pos.ticket)
+                            continue
+                            
+                        self._execute_partial_close(pos, symbol)
+            
+            except Exception as e:
+                self.log(f"Partial Close Check Error: {e}")
     
     def _execute_partial_close(self, position, symbol):
         """Execute partial close and move SL to break even"""
@@ -817,6 +826,47 @@ class TradingEngine:
             return False
         except:
             return False
+
+    def close_all_positions(self):
+        """Close all open positions immediately"""
+        with self.mt5_lock:
+            try:
+                positions = mt5.positions_get()
+                if not positions:
+                    self.log("No positions to close.")
+                    return
+
+                for pos in positions:
+                    # Filter by symbol if needed, but usually 'Close All' means EVERYTHING for safety
+                    # if pos.symbol not in self.symbols: continue 
+                    
+                    # Determine close type
+                    type_close = mt5.ORDER_TYPE_SELL if pos.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+                    price = mt5.symbol_info_tick(pos.symbol).bid if type_close == mt5.ORDER_TYPE_SELL else mt5.symbol_info_tick(pos.symbol).ask
+                    
+                    request = {
+                        "action": mt5.TRADE_ACTION_DEAL,
+                        "position": pos.ticket,
+                        "symbol": pos.symbol,
+                        "volume": pos.volume,
+                        "type": type_close,
+                        "price": price,
+                        "deviation": self.deviation,
+                        "magic": self.magic_number,
+                        "comment": "Emergency Close",
+                        "type_time": mt5.ORDER_TIME_GTC,
+                        "type_filling": mt5.ORDER_FILLING_IOC,
+                    }
+                    
+                    result = mt5.order_send(request)
+                    if result.retcode == mt5.TRADE_RETCODE_DONE:
+                        self.log(f"Closed Position {pos.ticket} ({pos.symbol})")
+                        self.db.close_trade(pos.ticket, price, 0.0) # Profit will be updated by reconcile later
+                    else:
+                        self.log(f"Failed to close {pos.ticket}: {result.comment}")
+                        
+            except Exception as e:
+                self.log(f"Error closing all positions: {e}")
 
     def _reconcile_state(self):
         """Reconcile local DB state with MT5 reality"""

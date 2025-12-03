@@ -44,3 +44,15 @@ cachedir/
 *.pt
 models/
 agents/
+
+# Build Artifacts & Verification Logs
+build_log_v*.txt
+verify_build_output_v*.txt
+detected_imports.txt
+check_db_method.py
+scan_imports.py
+check_paths.py
+check_dlls.py
+verify_spec_paths.py
+verify_build_content.py
+copy_tkinter_deps.py
