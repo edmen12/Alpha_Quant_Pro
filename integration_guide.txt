@@ -1,0 +1,80 @@
+## 🔌 集成指南 (Integration Guide)
+
+为确保 **实盘 = 回测**，您的引擎必须按照以下规范提供数据和调用 Agent。
+
+### 1. 数据输入要求 (Data Input Specification)
+
+Agent 需要接收 `ModelInput` 对象，其中 `history_candles` 是关键：
+
+| 字段 | 类型 | 要求 | 备注 |
+|------|------|------|------|
+| `datetime` | `datetime` | **必须** | K线时间戳 (UTC) |
+| `open` | `float` | **必须** | 开盘价 |
+| `high` | `float` | **必须** | 最高价 |
+| `low` | `float` | **必须** | 最低价 |
+| `close` | `float` | **必须** | 收盘价 |
+| `volume` | `float` | 可选 | 成交量 |
+
+**数据量要求**: 至少提供 **200 根 M15 K线** (约 50 小时)。不足 200 根时，Agent 返回 `HOLD`。
+
+### 2. 调用接口 (API Interface)
+
+```python
+from agent import TradingAgent, ModelInput
+
+# 1. 初始化
+agent = TradingAgent(bundle_dir="path/to/agent_bundle_alpha_prime")
+
+# 2. 构造输入
+model_input = ModelInput(
+    timestamp=current_time,
+    symbol="XAUUSD",
+    timeframe="M15",
+    price=current_close,            # 当前 Close
+    history_candles=df_m15_history, # DataFrame, 至少 200 行
+    candle={"o":..., "h":..., "l":..., "c":...},
+    position=0,                     # 0=Flat, 1=Long, -1=Short
+    bars_held=0,
+    open_trades=0,
+    entry_price=0.0,                # 如果有持仓，填入开仓价
+    daily_pnl=0.0,
+    daily_drawdown=0.0,
+    equity=10000.0,                 # 当前净值
+    balance=10000.0,
+    meta={}
+)
+
+# 3. 获取信号
+output = agent.predict_from_input(model_input)
+
+# 4. 解析输出
+print(output.signal)     # "BUY" / "SELL" / "HOLD"
+print(output.size)       # 建议手数 (由 risk_manager 计算)
+print(output.sl)         # 止损价 (必须设置！交给券商执行)
+print(output.tag)        # 信号标签, 如 "V5_TREND_LONG"
+```
+
+### 3. 关键一致性保证 (Parity Checklist)
+
+| 项目 | 回测实现 | 实盘要求 | 重要性 |
+|------|----------|----------|--------|
+| **K线粒度** | M15 | **必须 M15** | 🔴 致命 |
+| **时区** | UTC | **必须 UTC** | 🔴 致命 |
+| **H1 Trend 计算** | Bundle 内置 (`shift(1)`) | 无需外部提供 | ✅ 自给自足 |
+| **ATR 计算** | Bundle 内置 | 无需外部提供 | ✅ 自给自足 |
+| **止损执行** | 回测用 Low/High 检测 | **券商执行** (Agent 只提供 `sl` 价格) | 🟡 依赖券商 |
+| **仓位管理** | `0.1 Lot / $10k` | Agent 自动计算, 但引擎可覆盖 | 🟡 可调 |
+
+### 4. 常见错误 (Common Mistakes)
+
+| 错误 | 后果 | 解决方案 |
+|------|------|----------|
+| 提供 M1 数据 | 指标计算错误 | 转换为 M15 |
+| 提供 < 200 根 K线 | Agent 返回 HOLD | 增加历史深度 |
+| 不设置 SL | 无限亏损 | 必须把 `output.sl` 传给券商 |
+| 时区混乱 (本地时间) | H1 Trend / Session 错误 | 统一 UTC |
+| 手动覆盖 signal | 回测与实盘不一致 | 严格执行 Agent 信号 |
+
+---
+
+## 🛑 Final Governance Protocol

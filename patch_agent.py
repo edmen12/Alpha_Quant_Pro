@@ -1,28 +1,38 @@
+
 import os
 
-agent_path = r"c:\Users\User\Desktop\trading_terminal\agents\agent_bundle_AI_MODEL_V7_1\agent.py"
+agent_path = r'agents\agent_bundle_alpha_prime\agent.py'
 
 with open(agent_path, 'r', encoding='utf-8') as f:
     content = f.read()
 
-# Patch the import block to print the error
-old_block = """try:
-    import onnxruntime as ort
-except ImportError:  # pragma: no cover - runtime requirement
-    ort = None"""
+if 'def compute_features(df):' in content:
+    print("compute_features already exists.")
+else:
+    # Insert after imports
+    target = 'from typing import List, Dict, Optional'
+    injection = '''from typing import List, Dict, Optional
+from feature_engineering import FeatureEngineerV2
 
-new_block = """try:
-    import onnxruntime as ort
-except ImportError as e:
-    print(f"CRITICAL AGENT IMPORT ERROR: {e}")
-    import traceback
-    traceback.print_exc()
-    ort = None"""
-
-if old_block in content:
-    new_content = content.replace(old_block, new_block)
+def compute_features(df):
+    """
+    Custom feature computation hook for Agent Adapter.
+    Returns the feature vector for the last candle.
+    """
+    try:
+        fe = FeatureEngineerV2()
+        # process() returns DataFrame with features
+        df_features = fe.process(df)
+        
+        # Return the last row as numpy array
+        # Ensure we return float32 to match expected type
+        return df_features.iloc[-1].values.astype("float32")
+    except Exception as e:
+        print(f"Error in alpha_prime compute_features: {e}")
+        return None
+'''
+    new_content = content.replace(target, injection)
+    
     with open(agent_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
-    print("Successfully patched agent.py to show import errors.")
-else:
-    print("Could not find the import block to patch. It might have been patched already.")
+    print("Successfully patched agent.py")

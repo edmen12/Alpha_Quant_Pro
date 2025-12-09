@@ -10,3 +10,6 @@ xgboost
 yfinance
 requests
 onnxruntime
+lightgbm
+catboost
+statsmodels

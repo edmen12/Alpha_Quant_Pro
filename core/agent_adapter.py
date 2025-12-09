@@ -1,9 +1,7 @@
-"""
-Agent Bundle Adapter - Dynamically loads and wraps agent bundles
-"""
 import importlib.util
 import logging
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -32,6 +30,7 @@ class AgentBundleAdapter(BaseModel):
         self.bundle_name = self.bundle_path.name
         self._agent = None
         self._agent_module = None
+        self._custom_feature_computer = None
         
         logger.info(f"Initializing AgentBundleAdapter for '{self.bundle_name}'")
         
@@ -48,42 +47,65 @@ class AgentBundleAdapter(BaseModel):
         if not agent_file.exists():
             raise FileNotFoundError(f"agent.py not found in {self.bundle_path}")
         
-        # Create unique module name - use hash to avoid conflicts with bundle name
-        import hashlib
-        hash_suffix = hashlib.md5(str(self.bundle_path.absolute()).encode()).hexdigest()[:8]
-        module_name = f"agent_module_{hash_suffix}"
-        
-        spec = importlib.util.spec_from_file_location(module_name, agent_file)
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-        
-        self._agent_module = module
-        
-        # Try multiple loading patterns
-        # Pattern 1: load_agent() function (our standard)
-        if hasattr(module, 'load_agent'):
-            self._agent = module.load_agent(str(self.bundle_path))
-            logger.info(f"Successfully loaded agent via load_agent() from '{self.bundle_name}'")
-        
-        # Pattern 2: TradingAgent class (auto trade standard)
-        elif hasattr(module, 'TradingAgent'):
-            agent_class = getattr(module, 'TradingAgent')
-            self._agent = agent_class(str(self.bundle_path))
-            logger.info(f"Successfully loaded agent via TradingAgent class from '{self.bundle_name}'")
-        
-        # Pattern 3: AgentBundleModel class (another variant)
-        elif hasattr(module, 'AgentBundleModel'):
-            agent_class = getattr(module, 'AgentBundleModel')
-            self._agent = agent_class(str(self.bundle_path))
-            logger.info(f"Successfully loaded agent via AgentBundleModel class from '{self.bundle_name}'")
-        
-        else:
-            raise AttributeError(
-                f"Module '{module_name}' does not have 'load_agent' function, "
-                f"'TradingAgent' class, or 'AgentBundleModel' class. "
-                f"Please ensure your agent.py implements one of these patterns."
-            )
+        try:
+             # Add root to sys.path to ensure we can import 'agents.xxx'
+            if os.getcwd() not in sys.path:
+                sys.path.append(os.getcwd())
+            
+            # Add bundle directory to sys.path for sibling imports (e.g., feature_engineering.py)
+            bundle_dir = str(self.bundle_path)
+            if bundle_dir not in sys.path:
+                sys.path.insert(0, bundle_dir)
+                logger.info(f"Added bundle directory to sys.path: {bundle_dir}")
+            
+            # Dynamic import
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(f"agents.{self.bundle_name}", agent_file)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[f"agents.{self.bundle_name}"] = module
+            spec.loader.exec_module(module)
+            
+            self._agent_module = module
+            
+            # Debug: Log module path and attributes
+            if hasattr(module, '__file__'):
+                 logger.info(f"[DEBUG] Loaded Agent Module Path: {module.__file__}")
+            else:
+                 logger.info(f"[DEBUG] Loaded Agent Module (No file path)")
+            
+            # Check for custom feature computation hook
+            if hasattr(module, 'compute_features'):
+                if callable(module.compute_features):
+                    self._custom_feature_computer = module.compute_features
+                    logger.info(f"Found custom 'compute_features' function in '{self.bundle_name}'")
+                else:
+                    logger.warning(f"Found 'compute_features' but it is NOT callable: {type(module.compute_features)}")
+
+            # Pattern 1: load_agent() function
+            if hasattr(module, 'load_agent'):
+                self._agent = module.load_agent(str(self.bundle_path))
+                logger.info(f"Successfully loaded agent via load_agent() from '{self.bundle_name}'")
+            
+            # Pattern 2: TradingAgent class
+            elif hasattr(module, 'TradingAgent'):
+                agent_class = getattr(module, 'TradingAgent')
+                self._agent = agent_class(str(self.bundle_path))
+                logger.info(f"Successfully loaded agent via TradingAgent class from '{self.bundle_name}'")
+            
+            # Pattern 3: AgentBundleModel class
+            elif hasattr(module, 'AgentBundleModel'):
+                agent_class = getattr(module, 'AgentBundleModel')
+                self._agent = agent_class(str(self.bundle_path))
+                logger.info(f"Successfully loaded agent via AgentBundleModel class from '{self.bundle_name}'")
+            
+            else:
+                raise AttributeError(
+                    f"Module does not have 'load_agent', 'TradingAgent', or 'AgentBundleModel'. "
+                    f"Available: {dir(module)}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to load agent: {e}")
+            raise e
     
     def _compute_features_v7(self, df: pd.DataFrame) -> np.ndarray:
         """
@@ -96,6 +118,15 @@ class AgentBundleAdapter(BaseModel):
             
         logger.info(f"Computing V7 features for {len(df)} bars")
         df = df.copy()
+        
+        # Ensure datetime index for time-based features
+        if 'datetime' in df.columns:
+            df['datetime'] = pd.to_datetime(df['datetime'])
+            df.set_index('datetime', inplace=True)
+        elif 'time' in df.columns:
+             df['time'] = pd.to_datetime(df['time'])
+             df.set_index('time', inplace=True)
+             
         close = df['close']
         
         # 1. Returns
@@ -174,21 +205,16 @@ class AgentBundleAdapter(BaseModel):
         """
         if self._agent is None:
             raise RuntimeError("Agent not loaded")
+        
+        # logger.info(f"[ADAPTER] predict() called for {self.bundle_name}. has_predict={hasattr(self._agent, 'predict')}, has_predict_from_input={hasattr(self._agent, 'predict_from_input')}")
             
         computed_features = None
         
-        # Compatibility: Compute features if missing and V7
-        if (getattr(model_input, 'features', None) is None or np.all(getattr(model_input, 'features', []) == 0)) and "V7" in self.bundle_name:
-             if model_input.history_candles is not None and not model_input.history_candles.empty:
-                 try:
-                     computed_features = self._compute_features_v7(model_input.history_candles)
-                     # Try to attach to model_input for Pattern 1 (if supported)
-                     try:
-                         model_input.features = computed_features
-                     except:
-                         pass
-                 except Exception as e:
-                     logger.error(f"Failed to compute V7 features: {e}")
+        # NOTE: Self-sufficient bundles (like Alpha Prime V5) handle their own feature 
+        # engineering internally using history_candles. We should NOT pre-compute features
+        # here as it can interfere with the bundle's internal logic.
+        # The bundle's predict_from_input method will call its own fe.process() on history_candles.
+        # NOTE: Self-sufficient bundles don't use model_input.features, so we don't warn about missing features.
 
         # Pattern 1: Agent has standardized predict() method
         if hasattr(self._agent, 'predict') and callable(getattr(self._agent, 'predict')):
@@ -219,6 +245,7 @@ class AgentBundleAdapter(BaseModel):
         
         # Pattern 2: Legacy predict_from_input() method (our old agents)
         if hasattr(self._agent, 'predict_from_input'):
+            # logger.info(f"[ADAPTER] Calling predict_from_input on {self.bundle_name}")
             # Need to convert to agent's expected format
             agent_model_input_class = getattr(self._agent_module, 'ModelInput', None)
             

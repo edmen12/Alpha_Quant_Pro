@@ -122,6 +122,12 @@ class TradingEngine:
         # MT5 is not thread-safe, so we use a Lock for MT5 calls, but allow multiple workers for other tasks (e.g. Model Inference)
         self.executor = ThreadPoolExecutor(max_workers=4) 
         self.mt5_lock = threading.Lock()
+        
+        # Timezone Offset
+        self.server_offset_hours = 0.0
+        
+        # Connect
+        self.connect_mt5()
 
         # Analytics Cache
         self.analytics_cache = None
@@ -269,6 +275,33 @@ class TradingEngine:
             self.log(f"Config Reload Error: {e}")
             return False
 
+    def _calculate_server_offset(self):
+        """
+        Calculate MT5 Server Time vs UTC Offset
+        """
+        try:
+            # Use XAUUSD (always liquid) or EURUSD
+            sym = "XAUUSD"
+            tick = mt5.symbol_info_tick(sym)
+            if tick is None:
+                # Try getting just time
+                # Fallback to 0 if fails
+                self.log(f"Warning: Could not get tick for {sym} to calculate offset")
+                return 0.0
+                
+            server_time_s = tick.time
+            utc_now_s = datetime.now(timezone.utc).timestamp()
+            
+            diff_s = server_time_s - utc_now_s
+            diff_h = round(diff_s / 3600.0) # Round to nearest hour
+            
+            self.log(f"MT5 Server Timezone Offset Detected: {diff_h:+.1f} hours (Server: {datetime.fromtimestamp(server_time_s)} vs UTC: {datetime.fromtimestamp(utc_now_s)})")
+            return float(diff_h)
+            
+        except Exception as e:
+            self.log(f"Error calculating timezone offset: {e}")
+            return 0.0
+
     def connect_mt5(self):
         if self.mt5_path:
             self.log(f"Connecting to MT5 at: {self.mt5_path}")
@@ -311,14 +344,17 @@ class TradingEngine:
 
     def get_history(self, n=300, symbol=None):
         target_symbol = symbol if symbol else self.symbols[0]
-    def get_history(self, n=300, symbol=None):
-        target_symbol = symbol if symbol else self.symbols[0]
         with self.mt5_lock:
             rates = mt5.copy_rates_from_pos(target_symbol, self.mt5_timeframe, 0, n)
         if rates is None: return pd.DataFrame()
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
         df.rename(columns={'time': 'datetime', 'tick_volume': 'volume'}, inplace=True)
+        
+        # Apply Timezone Correction (Server -> UTC)
+        if self.server_offset_hours != 0:
+            df['datetime'] = df['datetime'] - pd.Timedelta(hours=self.server_offset_hours)
+            
         return df
 
     def get_position_info(self, symbol=None):
@@ -362,7 +398,7 @@ class TradingEngine:
             })
         return pos_list
 
-    def get_trade_history(self, days=30):
+    def get_trade_history(self, days=30, filter_by_symbol=True):
         """Get trading history for the last N days"""
         if not mt5.terminal_info(): return []
         
@@ -376,7 +412,7 @@ class TradingEngine:
             for d in deals:
                 # Filter by our symbols if needed, or just show all
                 deal_symbol = d.symbol
-                if self.symbols and deal_symbol not in self.symbols:
+                if filter_by_symbol and self.symbols and deal_symbol not in self.symbols:
                     continue
 
                 # We only care about OUT deals (Closing trades) or IN/OUT for full history
@@ -426,24 +462,7 @@ class TradingEngine:
             return history
         return []
 
-    def get_all_positions(self):
-        """Get all active positions"""
-        if not mt5.terminal_info(): return []
-        positions = mt5.positions_get()
-        if positions:
-            # Convert named tuple to dict for easier handling
-            return [{
-                'ticket': p.ticket,
-                'symbol': p.symbol,
-                'type': 'BUY' if p.type == 0 else 'SELL',
-                'volume': p.volume,
-                'price_open': p.price_open,
-                'sl': p.sl,
-                'tp': p.tp,
-                'profit': p.profit,
-                'time': datetime.fromtimestamp(p.time).strftime('%H:%M:%S')
-            } for p in positions]
-        return []
+
 
     def close_position(self, ticket):
         """Close a specific position by ticket"""
@@ -482,18 +501,7 @@ class TradingEngine:
             self.db.close_trade(ticket, request['price'], current_profit)
             return True
 
-    def close_all_positions(self, symbol=None):
-        """Close all active positions for this symbol (or all if None)"""
-        if symbol:
-            positions = mt5.positions_get(symbol=symbol)
-        else:
-            positions = mt5.positions_get()
-            
-        if not positions: return
-        
-        for pos in positions:
-            self.close_position(pos.ticket)
-    
+
     def check_spread(self, symbol):
         """
         智能入场检查 (Smart Entry Check)
@@ -827,13 +835,17 @@ class TradingEngine:
         except:
             return False
 
-    def close_all_positions(self):
+    def close_all_positions(self, symbol=None):
         """Close all open positions immediately"""
         with self.mt5_lock:
             try:
-                positions = mt5.positions_get()
+                if symbol:
+                    positions = mt5.positions_get(symbol=symbol)
+                else:
+                    positions = mt5.positions_get()
+                
                 if not positions:
-                    self.log("No positions to close.")
+                    # self.log("No positions to close.") # Reduce spam
                     return
 
                 for pos in positions:
@@ -940,7 +952,7 @@ class TradingEngine:
         """Internal synchronous calculation logic"""
         try:
             # 1. Fetch history using Engine's connection (Thread-Safe context)
-            history = self.get_trade_history(days)
+            history = self.get_trade_history(days, filter_by_symbol=False)
             
             # 2. Pass data to Analyzer
             analyzer = PerformanceAnalyzer(symbol=None)
@@ -1030,8 +1042,9 @@ class TradingEngine:
             self.agent_adapter = AgentBundleAdapter(self.bundle_path)
             logger.info("Agent Bundle Loaded.")
             
-            logger.info(f"Engine Started. Symbols: {self.symbols}, Risk: {self.risk_percent*100}%")
-            # self.send_alert(f"🚀 Engine Started\nSymbols: {self.symbols}\nRisk: {self.risk_percent*100}%")
+            # Log Startup
+            sizing_info = f"Risk: {self.risk_percent*100:.1f}%" if self.use_risk_based_sizing else f"Fixed Lot: {self.lot_size}"
+            logger.info(f"Engine Started. Symbols: {self.symbols}, {sizing_info}")
             
             # Track last bar time per symbol
             last_bar_times = {s: 0 for s in self.symbols}
@@ -1080,8 +1093,8 @@ class TradingEngine:
                                 self.log(f"[{symbol}] New Bar: {datetime.fromtimestamp(current_bar_time)}")
                                 last_bar_times[symbol] = current_bar_time
                                 
-                                # Fetch data for model
-                                df_hist = await self._run_blocking(self.get_history, 300, symbol)
+                                # Fetch data for model (Increased to 1000 for long-period indicators)
+                                df_hist = await self._run_blocking(self.get_history, 1000, symbol)
                                 
                                 if not df_hist.empty:
                                     pos_dir, bars_held, entry_price, ticket = await self._run_blocking(self.get_position_info, symbol)
@@ -1132,15 +1145,18 @@ class TradingEngine:
                                                 # Execute Logic
                                                 if output.signal == "BUY":
                                                     if pos_dir == -1:
-                                                        self.log(f"[{symbol}] Closing Short Position")
-                                                        await self._run_blocking(self.execute_trade, symbol, "BUY")
+                                                        self.log(f"[{symbol}] Reversal: Closing All Short Positions")
+                                                        await self._run_blocking(self.close_all_positions, symbol)
+                                                        # Optional: Immediate Reverse? 
+                                                        # Currently we just Close. Next bar if signal persists, it will Open Long.
+                                                        # This ensures clean exit first.
                                                     elif pos_dir == 0:
                                                         self.log(f"[{symbol}] Opening Long Position")
                                                         await self._run_blocking(self.execute_trade, symbol, "BUY", sl=output.sl, tp=output.tp)
                                                 elif output.signal == "SELL":
                                                     if pos_dir == 1:
-                                                        self.log(f"[{symbol}] Closing Long Position")
-                                                        await self._run_blocking(self.execute_trade, symbol, "SELL")
+                                                        self.log(f"[{symbol}] Reversal: Closing All Long Positions")
+                                                        await self._run_blocking(self.close_all_positions, symbol)
                                                     elif pos_dir == 0:
                                                         self.log(f"[{symbol}] Opening Short Position")
                                                         await self._run_blocking(self.execute_trade, symbol, "SELL", sl=output.sl, tp=output.tp)
@@ -1154,7 +1170,7 @@ class TradingEngine:
                         # Get recent trades for UI (from MT5, not database)
                         trades = await self._run_blocking(self.get_trade_history, 30)
                         
-                        positions = await self._run_blocking(self.get_all_positions) # Get ALL positions
+                        positions = await self._run_blocking(self.get_open_positions) # Use consistent method
                         current_pnl = sum([p['profit'] for p in positions]) if positions else 0.0
                         total_profit = await self._run_blocking(self.db.get_total_profit)
                         
@@ -1163,16 +1179,17 @@ class TradingEngine:
                         current_price = tick.last if tick and tick.last > 0 else (tick.bid if tick else 0.0)
                         
                         status = {
+                            "connected": True,
                             "price": current_price,
                             "signal": self.last_signals[primary_symbol], # Show primary signal
                             "confidence": self.last_confs[primary_symbol],
                             "balance": account.balance if account else 0,
                             "equity": account.equity if account else 0,
                             "positions": positions, # Pass full list
-                            "pnl": current_pnl,
+                            "profit": current_pnl, # Mapped to 'profit' for Dashboard
                             "total_profit": total_profit,
-                            "history": df_ui,
-                            "trades": trades
+                            "history": trades, # Mapped to 'history' for Dashboard Trade List
+                            "chart_data": df_ui # Raw candles for potential chart use
                         }
                         # Run callback in main thread (UI thread) usually, but here we are in async thread.
                         self.callback_status(status)

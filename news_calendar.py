@@ -8,6 +8,10 @@ from bs4 import BeautifulSoup
 import pytz
 import logging
 
+import logging
+from database_manager import DatabaseManager
+from config_manager import ConfigManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +33,9 @@ class NewsCalendar:
         self.events = []
         self.last_update = None
         self.enabled = False
+        self.db = DatabaseManager()
+        self.config = ConfigManager.load()
+        self.fmp_key = self.config.get("fmp_api_key", "")
         
     def enable(self, enabled=True):
         """Enable or disable news filter"""
@@ -45,10 +52,34 @@ class NewsCalendar:
             list: 事件字典列表 [{'name': 'CPI', 'time': datetime, 'impact': 'High'}]
         """
         try:
+            # 1. Try Cache First
+            cached_events = self.db.get_today_news_events()
+            if cached_events:
+                self.events = cached_events
+                self.last_update = datetime.now()
+                logger.info(f"Loaded {len(cached_events)} events from cache")
+                return cached_events
+
+            # 2. Try FMP API (if key exists)
+            if self.fmp_key:
+                fmp_events = self.fetch_from_fmp()
+                if fmp_events:
+                    self.events = fmp_events
+                    self.last_update = datetime.now()
+                    self.db.save_news_events(fmp_events)
+                    return fmp_events
+
+            # 3. Fallback to Scraper
             url = "https://www.forexfactory.com/calendar"
             # Use cloudscraper to bypass Cloudflare
             import cloudscraper
-            scraper = cloudscraper.create_scraper()
+            scraper = cloudscraper.create_scraper(
+                browser={
+                    'browser': 'chrome',
+                    'platform': 'windows',
+                    'desktop': True
+                }
+            )
             
             response = scraper.get(url, timeout=15)
             response.raise_for_status()
@@ -66,7 +97,11 @@ class NewsCalendar:
             
             self.events = events
             self.last_update = datetime.now()
-            logger.info(f"Fetched {len(events)} high-impact events for today")
+            logger.info(f"Fetched {len(events)} high-impact events for today (Scraper)")
+            
+            # Save to cache
+            if events:
+                self.db.save_news_events(events)
             
             return events
             
@@ -79,6 +114,49 @@ class NewsCalendar:
             self.events = []
             return []
             
+    def fetch_from_fmp(self):
+        """Fetch news from Financial Modeling Prep API"""
+        try:
+            today = datetime.now().strftime('%Y-%m-%d')
+            # FMP v3 economic_calendar is legacy/deprecated. Using v4.
+            url = f"https://financialmodelingprep.com/api/v4/economic-calendar?from={today}&to={today}&apikey={self.fmp_key}"
+            
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            
+            events = []
+            for item in data:
+                # Filter High Impact (FMP doesn't have explicit impact field always, but usually 'High' or 3 stars)
+                # FMP structure: {event, date, country, currency, impact, ...}
+                # Impact might be missing or different. Let's assume all are relevant or filter by known keywords?
+                # Actually FMP economic calendar usually returns all.
+                # Let's filter by impact if available, or just take all for now and let user decide?
+                # Better: FMP returns 'impact': 'Low', 'Medium', 'High'
+                
+                impact = item.get('impact', 'Medium')
+                if impact != 'High': continue
+                
+                event_time_str = item.get('date') # "2023-10-27 08:30:00"
+                event_time = datetime.strptime(event_time_str, '%Y-%m-%d %H:%M:%S')
+                event_time = pytz.UTC.localize(event_time) # FMP is usually UTC
+                
+                events.append({
+                    'name': item.get('event'),
+                    'time': event_time,
+                    'impact': 'High',
+                    'country': item.get('country'),
+                    'currency': item.get('currency'),
+                    'source': 'FMP'
+                })
+                
+            logger.info(f"Fetched {len(events)} high-impact events from FMP")
+            return events
+            
+        except Exception as e:
+            logger.error(f"FMP Fetch Failed: {e}")
+            return []
+
     def _parse_forexfactory_row(self, row):
         """Helper to parse a single row safely"""
         try:

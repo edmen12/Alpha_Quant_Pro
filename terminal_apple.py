@@ -6,6 +6,7 @@ Design Philosophy: "OLED Black", "Super Ellipse", "Floating Interface"
 import os
 import sys
 # sys.setrecursionlimit(5000) # Removed: Fixed underlying recursion issue
+import onnxruntime
 import shutil
 from pathlib import Path
 import core.web_server
@@ -122,6 +123,7 @@ class DS:
     # Colors (Dark Mode Only)
     BG_MAIN = "#000000"         # Pure Black
     BG_CARD = "#161618"         # Deep Grey (Floating)
+    BG_SIDEBAR = "#121212"      # Sidebar Background
     BG_ISLAND = "#2C2C2E"       # Dynamic Island Color
     
     # Accents
@@ -152,6 +154,8 @@ class DS:
     def font_title(): return ctk.CTkFont(family="Segoe UI", size=16, weight="bold")
     @staticmethod
     def font_body(): return ctk.CTkFont(family="Segoe UI", size=15, weight="bold")
+    @staticmethod
+    def font_normal(): return ctk.CTkFont(family="Segoe UI", size=14, weight="normal") # Non-bold for long text
     @staticmethod
     def font_mono(): return ctk.CTkFont(family="Consolas", size=26, weight="bold")
     @staticmethod
@@ -231,16 +235,14 @@ class ViewDashboard(ctk.CTkFrame):
         self.stat_pnl = StatIsland(self.stats_grid, "P&L", "+$0.00", color=DS.ACCENT_GREEN)
         self.stat_pnl.grid(row=0, column=0, padx=(0, 10), sticky="ew")
         
-        # self.stat_signal removed as per request
-        
         self.stat_price = StatIsland(self.stats_grid, "PRICE", "$0.00", color=DS.ACCENT_BLUE)
-        self.stat_price.grid(row=0, column=1, padx=10, sticky="ew") # Shifted column
+        self.stat_price.grid(row=0, column=1, padx=10, sticky="ew")
         
         self.stat_balance = StatIsland(self.stats_grid, "BALANCE", "$0.00")
-        self.stat_balance.grid(row=0, column=2, padx=10, sticky="ew") # Shifted column
+        self.stat_balance.grid(row=0, column=2, padx=10, sticky="ew")
         
         self.stat_equity = StatIsland(self.stats_grid, "EQUITY", "$0.00")
-        self.stat_equity.grid(row=0, column=3, padx=(10, 0), sticky="ew") # Shifted column
+        self.stat_equity.grid(row=0, column=3, padx=(10, 0), sticky="ew")
         
         # Positions Card
         self.pos_card = AppleCard(self)
@@ -251,11 +253,9 @@ class ViewDashboard(ctk.CTkFrame):
                     text_color=DS.TEXT_SECONDARY).pack(pady=(20, 10), anchor="w", padx=20)
         
         self.btn_close_all = ctk.CTkButton(self.pos_card, text="CLOSE ALL", width=80, height=24,
-                                         fg_color="#3A3A3C", hover_color="#48484A", # Grey color
+                                         fg_color="#3A3A3C", hover_color="#48484A",
                                          font=ctk.CTkFont(size=11, weight="bold"),
                                          command=self._close_all)
-        self.btn_close_all.place(relx=0.95, rely=0.05, anchor="ne")
-
         self.btn_close_all.place(relx=0.95, rely=0.05, anchor="ne")
 
         # Positions Header
@@ -292,8 +292,6 @@ class ViewDashboard(ctk.CTkFrame):
         hist_header = ctk.CTkFrame(self.trades_card, fg_color="transparent")
         hist_header.pack(fill="x", padx=20, pady=(0, 5))
         
-        font_thin = ctk.CTkFont(family="Segoe UI", size=12) # Normal weight
-        
         ctk.CTkLabel(hist_header, text="TIME", width=110, anchor="w", text_color=DS.TEXT_SECONDARY, font=font_thin).pack(side="left", expand=True)
         ctk.CTkLabel(hist_header, text="SYMBOL", width=70, anchor="w", text_color=DS.TEXT_SECONDARY, font=font_thin).pack(side="left", expand=True)
         ctk.CTkLabel(hist_header, text="TYPE", width=50, anchor="w", text_color=DS.TEXT_SECONDARY, font=font_thin).pack(side="left", expand=True)
@@ -302,144 +300,190 @@ class ViewDashboard(ctk.CTkFrame):
         ctk.CTkLabel(hist_header, text="CLOSE", width=70, anchor="w", text_color=DS.TEXT_SECONDARY, font=font_thin).pack(side="left", expand=True)
         ctk.CTkLabel(hist_header, text="PROFIT", width=70, anchor="w", text_color=DS.TEXT_SECONDARY, font=font_thin).pack(side="left", expand=True)
 
-        self.list_container = ctk.CTkScrollableFrame(self.trades_card, fg_color="transparent")
-        self.list_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self.trades_container = ctk.CTkScrollableFrame(self.trades_card, fg_color="transparent", height=150)
+        self.trades_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        self.empty_label = ctk.CTkLabel(self.list_container, text="No trades yet.", text_color=DS.TEXT_TERTIARY)
-        self.empty_label.pack(pady=40)
-
-        self.last_trade_count = 0
-        self.last_top_ticket = None
+        self.empty_trades_label = ctk.CTkLabel(self.trades_container, text="No trades yet.", text_color=DS.TEXT_TERTIARY)
+        self.empty_trades_label.pack(pady=20)
+        
         self.pos_rows = {}
-
-    def update_stats(self, signal, conf, price, balance, equity, pnl):
-        self.stat_pnl.update(f"${pnl:,.2f}", DS.ACCENT_GREEN if pnl >= 0 else DS.ACCENT_RED)
-        
-        # self.stat_signal removed
-        
-        self.stat_price.update(f"${price:,.2f}", DS.ACCENT_BLUE)
-        self.stat_balance.update(f"${balance:,.2f}")
-        self.stat_equity.update(f"${equity:,.2f}")
-        
-        if signal == "BUY":
-            self.status_badge.configure(text=f"● BUY ({conf*100:.0f}%)", text_color=DS.ACCENT_GREEN)
-        elif signal == "SELL":
-            self.status_badge.configure(text=f"● SELL ({conf*100:.0f}%)", text_color=DS.ACCENT_RED)
-        else:
-            self.status_badge.configure(text=f"● SCANNING ({conf*100:.0f}%)", text_color=DS.ACCENT_BLUE)
-
-    def update_trades(self, trades):
-        if not trades:
-            if self.last_trade_count > 0:
-                self.last_trade_count = 0
-                for widget in self.list_container.winfo_children(): widget.destroy()
-                self.empty_label.pack(pady=40)
-            return
-
-        # Check if latest trade is different or count changed
-        latest_ticket = trades[0]['ticket'] if trades else None
-        if len(trades) == self.last_trade_count and latest_ticket == self.last_top_ticket:
-            return
-            
-        self.last_trade_count = len(trades)
-        self.last_top_ticket = latest_ticket
-
-        for widget in self.list_container.winfo_children():
-            if isinstance(widget, ctk.CTkFrame): widget.destroy()
-        
-        if not trades:
-            self.empty_label.pack(pady=40)
-            return
-        self.empty_label.pack_forget()
-        
-        for trade in trades:
-            row = ctk.CTkFrame(self.list_container, fg_color="transparent")
-            row.pack(fill="x", pady=5)
-            
-            # Show full date time
-            time_str = str(trade['time'])
-            ctk.CTkLabel(row, text=time_str, width=110, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-            
-            ctk.CTkLabel(row, text=trade.get('symbol', 'XAUUSD'), width=70, anchor="w", text_color=DS.TEXT_SECONDARY).pack(side="left", expand=True)
-            
-            is_buy = trade['type'] == 'BUY'
-            color = DS.ACCENT_GREEN if is_buy else DS.ACCENT_RED
-            ctk.CTkLabel(row, text=trade['type'], width=50, anchor="w", text_color=color, font=ctk.CTkFont(weight="bold")).pack(side="left", expand=True)
-            
-            # Volume
-            vol = trade.get('volume', 0.0)
-            ctk.CTkLabel(row, text=f"{vol:.2f}", width=50, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-            
-            # Open Price
-            open_price = trade.get('open_price', 0.0)
-            ctk.CTkLabel(row, text=f"{open_price:.2f}", width=70, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-
-            # Close Price
-            close_price = trade.get('close_price', 0.0)
-            ctk.CTkLabel(row, text=f"{close_price:.2f}", width=70, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-            
-            pnl = trade['profit']
-            pnl_color = DS.ACCENT_GREEN if pnl >= 0 else DS.ACCENT_RED
-            ctk.CTkLabel(row, text=f"${pnl:.2f}", width=70, anchor="w", text_color=pnl_color).pack(side="left", expand=True)
-
-    def update_positions(self, positions):
-        if not positions:
-            for ticket in list(self.pos_rows.keys()): self.pos_rows[ticket]['frame'].destroy()
-            self.pos_rows.clear()
-            self.empty_pos_label.pack(pady=20)
-            return
-        self.empty_pos_label.pack_forget()
-        
-        current_tickets = set(t['ticket'] for t in positions)
-        for ticket in list(self.pos_rows.keys()):
-            if ticket not in current_tickets:
-                self.pos_rows[ticket]['frame'].destroy()
-                del self.pos_rows[ticket]
-        
-        for trade in positions:
-            ticket = trade['ticket']
-            pnl = trade['profit']
-            pnl_color = DS.ACCENT_GREEN if pnl >= 0 else DS.ACCENT_RED
-            
-            if ticket in self.pos_rows:
-                self.pos_rows[ticket]['pnl_label'].configure(text=f"${pnl:.2f}", text_color=pnl_color)
-            else:
-                row = ctk.CTkFrame(self.pos_container, fg_color="transparent")
-                row.pack(fill="x", pady=5)
-                
-                ctk.CTkLabel(row, text=trade.get('time', '-'), width=110, anchor="w", text_color=DS.TEXT_SECONDARY).pack(side="left", expand=True)
-                ctk.CTkLabel(row, text=trade['symbol'], width=70, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-                
-                is_buy = trade['type'] == 'BUY'
-                color = DS.ACCENT_GREEN if is_buy else DS.ACCENT_RED
-                ctk.CTkLabel(row, text=trade['type'], width=50, anchor="w", text_color=color, font=ctk.CTkFont(weight="bold")).pack(side="left", expand=True)
-                
-                ctk.CTkLabel(row, text=f"{trade['volume']:.2f}", width=50, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-                ctk.CTkLabel(row, text=f"{trade['price_open']:.2f}", width=70, anchor="w", text_color=DS.TEXT_PRIMARY).pack(side="left", expand=True)
-                
-                ctk.CTkLabel(row, text=f"{trade.get('sl', 0):.2f}", width=60, anchor="w", text_color=DS.TEXT_SECONDARY).pack(side="left", expand=True)
-                ctk.CTkLabel(row, text=f"{trade.get('tp', 0):.2f}", width=60, anchor="w", text_color=DS.TEXT_SECONDARY).pack(side="left", expand=True)
-
-                pnl_label = ctk.CTkLabel(row, text=f"${pnl:.2f}", width=70, anchor="w", text_color=pnl_color)
-                pnl_label.pack(side="left", expand=True)
-                
-                btn = ctk.CTkButton(row, text="CLOSE", width=60, height=24, 
-                                  fg_color=DS.BG_ISLAND, hover_color=DS.ACCENT_RED,
-                                  font=ctk.CTkFont(size=10),
-                                  command=lambda t=ticket: self._close_trade(t))
-                btn.pack(side="left", expand=True)
-                
-                self.pos_rows[ticket] = {'frame': row, 'pnl_label': pnl_label}
-
-    def _close_trade(self, ticket):
-        app = self.winfo_toplevel()
-        if app.engine: app.engine.close_position(ticket)
+        self.last_history_sig = None
 
     def _close_all(self):
         app = self.winfo_toplevel()
-        if app.engine:
+        if hasattr(app, 'engine') and app.engine:
             if messagebox.askyesno("Confirm", "Close ALL Positions?"):
                 app.engine.close_all_positions()
+
+    def update_status(self, status):
+        # Update connection status
+        connected = status.get("connected", False)
+        if connected:
+            self.status_badge.configure(text="● CONNECTED", text_color=DS.ACCENT_GREEN)
+            
+            # Update Stats
+            profit = status.get("profit", 0.0)
+            self.stat_pnl.update(f"{profit:+.2f}", DS.ACCENT_GREEN if profit >= 0 else DS.ACCENT_RED)
+            
+            price = status.get("price", 0.0)
+            self.stat_price.update(f"{price:.2f}")
+            
+            self.stat_balance.update(f"${status.get('balance', 0):,.2f}")
+            self.stat_equity.update(f"${status.get('equity', 0):,.2f}")
+            
+            # Update Tables
+            positions = status.get("positions", [])
+            self._update_positions(positions)
+            
+            # Update Trades 
+            history = status.get("history", [])
+            self._update_trades(history)
+            
+        else:
+            self.status_badge.configure(text="● DISCONNECTED", text_color=DS.ACCENT_RED)
+    
+    def _update_positions(self, positions):
+        # 1. Identify stale tickets
+        current_tickets = {p.get('ticket') for p in positions if p.get('ticket')}
+        existing_tickets = set(self.pos_rows.keys())
+        
+        # Remove stale
+        for t in existing_tickets - current_tickets:
+            self.pos_rows[t]['frame'].destroy()
+            del self.pos_rows[t]
+        
+        if not positions:
+            self.empty_pos_label.pack(pady=20)
+            return
+        self.empty_pos_label.pack_forget()
+
+        font_mono = ctk.CTkFont(family="Consolas", size=12)
+        
+        for pos in positions:
+            t = pos.get("ticket")
+            if not t: continue
+            
+            # Extract Data
+            pnl = pos.get("profit", 0.0)
+            pnl_color = DS.ACCENT_GREEN if pnl >= 0 else DS.ACCENT_RED
+            pnl_text = f"{pnl:+.2f}"
+            price_current = f"{pos.get('price_current', 0.0):.2f}"
+            
+            if t in self.pos_rows:
+                # SMART UPDATE
+                cache = self.pos_rows[t]
+                try:
+                    cache['lbl_pnl'].configure(text=pnl_text, text_color=pnl_color)
+                except Exception:
+                     pass
+            else:
+                # CREATE NEW ROW
+                row = ctk.CTkFrame(self.pos_container, fg_color="transparent")
+                row.pack(fill="x", pady=2)
+                
+                time_str = str(pos.get("time", ""))
+                symbol = pos.get("symbol", "")
+                
+                raw_type = pos.get("type")
+                if isinstance(raw_type, int):
+                    type_str = "BUY" if raw_type == 0 else "SELL"
+                else:
+                    type_str = str(raw_type)
+                    
+                type_color = DS.ACCENT_GREEN if type_str == "BUY" else DS.ACCENT_RED
+                vol = f"{pos.get('volume', 0.0):.2f}"
+                open_price = f"{pos.get('price_open', 0.0):.2f}"
+                if 'price_open' not in pos: open_price = f"{pos.get('price', 0.0):.2f}"
+                
+                sl = f"{pos.get('sl', 0.0):.2f}"
+                tp = f"{pos.get('tp', 0.0):.2f}"
+                
+                ctk.CTkLabel(row, text=time_str, width=110, anchor="w", font=font_mono).pack(side="left", expand=True)
+                ctk.CTkLabel(row, text=symbol, width=70, anchor="w", font=font_mono).pack(side="left", expand=True)
+                ctk.CTkLabel(row, text=type_str, width=50, anchor="w", text_color=type_color, font=font_mono).pack(side="left", expand=True)
+                ctk.CTkLabel(row, text=vol, width=50, anchor="w", font=font_mono).pack(side="left", expand=True)
+                ctk.CTkLabel(row, text=open_price, width=70, anchor="w", font=font_mono).pack(side="left", expand=True)
+                ctk.CTkLabel(row, text=sl, width=60, anchor="w", font=font_mono).pack(side="left", expand=True)
+                ctk.CTkLabel(row, text=tp, width=60, anchor="w", font=font_mono).pack(side="left", expand=True)
+                
+                lbl_pnl = ctk.CTkLabel(row, text=pnl_text, width=70, anchor="w", text_color=pnl_color, font=font_mono)
+                lbl_pnl.pack(side="left", expand=True)
+                
+                close_btn = ctk.CTkButton(row, text="×", width=30, height=24, fg_color=DS.BG_ISLAND, hover_color="#3A3A3C",
+                                        command=lambda t=t: self._close_position(t))
+                close_btn.pack(side="left", padx=(0, 10))
+                
+                self.pos_rows[t] = {
+                    'frame': row,
+                    'lbl_pnl': lbl_pnl
+                }
+
+    def _update_trades(self, history):
+        # CACHE CHECK
+        if not history:
+             current_sig = "empty"
+        else:
+             current_sig = f"{len(history)}_{history[0].get('ticket')}"
+             
+        if current_sig == self.last_history_sig:
+            return
+        self.last_history_sig = current_sig
+
+        # Destroy all except empty_label
+        for widget in self.trades_container.winfo_children():
+            if widget == self.empty_trades_label:
+                widget.pack_forget()
+            else:
+                try:
+                    widget.destroy()
+                except:
+                    pass
+            
+        if not history:
+            self.empty_trades_label.pack(pady=20)
+            return
+        
+        font_mono = ctk.CTkFont(family="Consolas", size=12)
+        display_history = history[:50]
+        
+        for trade in display_history:
+            row = ctk.CTkFrame(self.trades_container, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            
+            symbol = trade.get("symbol", "")
+            
+            raw_type = trade.get("type", "BUY")
+            if isinstance(raw_type, int):
+                 type_str = "BUY" if raw_type == 0 else "SELL" if raw_type == 1 else str(raw_type)
+            else:
+                 type_str = str(raw_type)
+
+            type_color = DS.ACCENT_GREEN if type_str == "BUY" else DS.ACCENT_RED
+            vol = f"{trade.get('volume', 0.0):.2f}"
+            open_price = f"{trade.get('open_price', 0.0):.2f}"
+            if 'open_price' not in trade: open_price = f"{trade.get('price', 0.0):.2f}"
+            
+            close_price = f"{trade.get('price_close', 0.0):.2f}"
+            if 'price_close' not in trade: close_price = "0.00"
+                
+            profit = trade.get("profit", 0.0)
+            pnl_str = f"{profit:+.2f}"
+            pnl_color = DS.ACCENT_GREEN if profit >= 0 else DS.ACCENT_RED
+            
+            ctk.CTkLabel(row, text=str(trade.get("time", "")), width=110, anchor="w", font=font_mono).pack(side="left", expand=True)
+            ctk.CTkLabel(row, text=symbol, width=70, anchor="w", font=font_mono).pack(side="left", expand=True)
+            ctk.CTkLabel(row, text=type_str, width=50, anchor="w", text_color=type_color, font=font_mono).pack(side="left", expand=True)
+            ctk.CTkLabel(row, text=vol, width=50, anchor="w", font=font_mono).pack(side="left", expand=True)
+            ctk.CTkLabel(row, text=open_price, width=70, anchor="w", font=font_mono).pack(side="left", expand=True)
+            ctk.CTkLabel(row, text=close_price, width=70, anchor="w", font=font_mono).pack(side="left", expand=True)
+            ctk.CTkLabel(row, text=pnl_str, width=70, anchor="w", text_color=pnl_color, font=font_mono).pack(side="left", expand=True)
+
+    def _close_position(self, ticket):
+        app = self.winfo_toplevel()
+        if hasattr(app, 'engine') and app.engine:
+            app.engine.close_position(ticket)
+
+
 
 class ViewLogs(ctk.CTkFrame):
     MAX_LOG_LINES = 1000  # 最大日志行数，防止内存泄漏
@@ -629,15 +673,38 @@ class ViewAnalytics(ctk.CTkFrame):
             
             self.ax.clear()
             self.ax.set_facecolor(DS.BG_CARD)
+            
             if curve_data['times'] and curve_data['equity']:
                 # Convert strings to datetime for plotting if needed
-                # Use pd.to_datetime then to_pydatetime to ensure Matplotlib compatibility
-                times = [pd.to_datetime(t).to_pydatetime() for t in curve_data['times']]
-                self.ax.plot(times, curve_data['equity'], color=DS.ACCENT_BLUE)
-                # Format date on x-axis
                 import matplotlib.dates as mdates
+                
+                times = [pd.to_datetime(t).to_pydatetime() for t in curve_data['times']]
+                equity = curve_data['equity']
+                
+                # 1. Plot Main Line (Thicker, Smoother look)
+                self.ax.plot(times, equity, color=DS.ACCENT_BLUE, linewidth=2, alpha=0.9)
+                
+                # 2. Add Area Fill (Premium Look)
+                # Find a baseline that makes sense (min value slightly buffered)
+                baseline = min(equity) * 0.9995 if equity else 0
+                self.ax.fill_between(times, equity, baseline, color=DS.ACCENT_BLUE, alpha=0.15)
+                
+                # 3. Highlight Last Data Point
+                if times:
+                    self.ax.plot(times[-1], equity[-1], marker='o', color=DS.ACCENT_BLUE, markersize=6, alpha=1.0)
+                    # Optional: Add text annotation for last value
+                    # self.ax.text(times[-1], equity[-1], f" {equity[-1]:.2f}", color=DS.ACCENT_BLUE, ...)
+
+                # 4. Refined Grid & Spines
+                self.ax.grid(True, which='major', linestyle=':', color='white', alpha=0.08)
                 self.ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d %H:%M'))
                 self.fig.autofmt_xdate()
+                
+                # Remove borders for cleaner look
+                self.ax.spines['top'].set_visible(False)
+                self.ax.spines['right'].set_visible(False)
+                self.ax.spines['left'].set_visible(False) # Optional: Remove left axis line
+                self.ax.spines['bottom'].set_color(DS.TEXT_TERTIARY)
             
             self.canvas.draw()
             
@@ -749,27 +816,24 @@ class ViewAgents(ctk.CTkFrame):
     def _load_saved_config(self):
         config = ConfigManager.load()
         if config.get("bundle"): self.bundle_var.set(config["bundle"])
-        if config.get("bundle"): self.bundle_var.set(config["bundle"])
         if config.get("symbol"): self.symbol_entry.delete(0, "end"); self.symbol_entry.insert(0, config["symbol"])
         if config.get("timeframe"): self.timeframe_var.set(config["timeframe"])
-        if config.get("mt5"): 
-            self.mt5_var.set(config["mt5"])
-            if config["mt5"] != "auto":
-                self.mt5_path_entry.delete(0, "end"); self.mt5_path_entry.insert(0, config["mt5"])
         
-        if float(config.get("risk", 0)) > 0:
-            self.mode_var.set("Risk %")
-            self.risk_entry.delete(0, "end"); self.risk_entry.insert(0, config["risk"])
-            self._update_inputs("Risk %")
-        else:
+        # Load sizing mode and lot size
+        if config.get("risk_mode") == "fixed":
             self.mode_var.set("Fixed Lot")
-            self.lot_entry.delete(0, "end"); self.lot_entry.insert(0, config["lot_size"])
             self._update_inputs("Fixed Lot")
-            
-        if config.get("max_spread"): self.max_spread_entry.delete(0, "end"); self.max_spread_entry.insert(0, str(config["max_spread"]))
-        if config.get("max_loss"): self.max_loss_entry.delete(0, "end"); self.max_loss_entry.insert(0, str(config["max_loss"]))
-        if config.get("min_equity"): self.min_equity_entry.delete(0, "end"); self.min_equity_entry.insert(0, str(config["min_equity"]))
-        if config.get("news_filter"): self.news_filter_var.set(True)
+        elif config.get("risk_mode") == "percent":
+            self.mode_var.set("Risk %")
+            self._update_inputs("Risk %")
+        
+        if config.get("lot_size"):
+            self.lot_entry.delete(0, "end")
+            self.lot_entry.insert(0, str(config["lot_size"]))
+        if config.get("risk"):
+            self.risk_entry.delete(0, "end")
+            self.risk_entry.insert(0, str(config["risk"]))
+        
         if config.get("news_buffer"): self.news_buffer_entry.delete(0, "end"); self.news_buffer_entry.insert(0, str(config["news_buffer"]))
         if config.get("trailing_enabled"): self.trailing_var.set(True)
         if config.get("trailing_distance"): self.trailing_distance_entry.delete(0, "end"); self.trailing_distance_entry.insert(0, str(config["trailing_distance"]))
@@ -786,7 +850,9 @@ class ViewAgents(ctk.CTkFrame):
         self.bundle_var = ctk.StringVar(value="Select Bundle")
         self.bundle_menu = ctk.CTkOptionMenu(btn_frame, variable=self.bundle_var, fg_color=DS.BG_ISLAND, button_color=DS.ACCENT_BLUE, width=200)
         self.bundle_menu.pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Import", width=60, fg_color=DS.BG_ISLAND, command=self._import_bundle).pack(side="left")
+        self.bundle_menu.pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Import", width=60, fg_color=DS.BG_ISLAND, command=self._import_bundle).pack(side="left", padx=(0, 5))
+        ctk.CTkButton(btn_frame, text="Delete", width=60, fg_color=DS.BG_ISLAND, command=self._delete_bundle).pack(side="left")
         self._refresh_bundles()
 
     def _create_mt5_selector(self, parent):
@@ -831,13 +897,41 @@ class ViewAgents(ctk.CTkFrame):
             if not src.name.startswith("agent_bundle"):
                 messagebox.showerror("Error", "Folder must start with 'agent_bundle'")
                 return
-            dest = self.agents_dir / src.name
-            if dest.exists():
-                if not messagebox.askyesno("Exists", "Overwrite?"): return
-                shutil.rmtree(dest)
-            shutil.copytree(src, dest)
-            self._refresh_bundles()
-            self.bundle_var.set(src.name)
+            
+            try:
+                dst = self.agents_dir / src.name
+                if dst.exists():
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+                self._refresh_bundles()
+                self.bundle_var.set(src.name)
+                messagebox.showinfo("Success", f"Imported {src.name}")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+    def _delete_bundle(self):
+        bundle_name = self.bundle_var.get()
+        if bundle_name == "Select Bundle" or bundle_name == "No Bundles":
+            return
+            
+        # Safety: Check if Engine is running
+        if hasattr(self, 'engine') and self.engine and self.engine.running:
+            messagebox.showwarning("Busy", "Cannot delete bundle while Trading Engine is active.\nPlease stop the engine first.")
+            return
+        
+        if messagebox.askyesno("Delete Bundle", f"Are you sure you want to delete '{bundle_name}'?"):
+            try:
+                bundle_path = self.agents_dir / bundle_name
+                if bundle_path.exists() and bundle_path.is_dir():
+                    shutil.rmtree(bundle_path)
+                    self._refresh_bundles()
+                    messagebox.showinfo("Success", "Bundle deleted.")
+                else:
+                    messagebox.showerror("Error", "Bundle not found.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete bundle: {e}")
+                return
+
 
     def _select_mt5(self):
         filename = filedialog.askopenfilename(filetypes=[("Executable", "*.exe")])
@@ -969,8 +1063,8 @@ class ViewSettings(ctk.CTkFrame):
         self.btn_test = CapsuleButton(btn_row, "Test Connection", color=DS.ACCENT_PURPLE, width=150, command=self._test_tg)
         self.btn_test.pack(side="left")
         
-        info_text = "配置说明：\n1. 在 Telegram 搜索 @BotFather，创建新机器人获取 Bot Token\n2. 向机器人发送任意消息激活\n3. 在 Telegram 搜索 @userinfobot，获取您的 Chat ID"
-        ctk.CTkLabel(self.card, text=info_text, font=DS.font_body(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=10)
+        info_text = "Configuration Guide:\n1. Search @BotFather in Telegram, create a new bot to get Bot Token\n2. Send any message to your bot to activate it\n3. Search @userinfobot in Telegram to get your Chat ID"
+        ctk.CTkLabel(self.card, text=info_text, font=DS.font_normal(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=10)
         
         ctk.CTkLabel(self.card, text="REMOTE ACCESS SECURITY", font=ctk.CTkFont(size=12, weight="bold"), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(32, 10))
         
@@ -984,8 +1078,27 @@ class ViewSettings(ctk.CTkFrame):
         self.sw_ngrok_enable.pack(anchor="w", padx=20, pady=(0, 10), fill="x")
         self.ngrok_token_entry = self._create_input(self.card, "Ngrok Auth Token")
         
-        ngrok_info = "配置说明：\n1. 访问 dashboard.ngrok.com 注册/登录\n2. 在左侧菜单找到 'Your Authtoken'\n3. 复制 Token 并粘贴到上方输入框\n4. 开启开关后，公网链接将自动发送到您的 Telegram\n⚠️ 注意：必须先配置并开启上方的 Telegram 通知"
-        ctk.CTkLabel(self.card, text=ngrok_info, font=DS.font_body(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=(5, 20))
+        ngrok_info = "Configuration Guide:\n1. Register/Login at dashboard.ngrok.com\n2. Find 'Your Authtoken' in left menu\n3. Copy Token and paste above\n4. Public URL will be sent to Telegram upon activation\n⚠️ Note: Telegram notifications must be configured first"
+        ctk.CTkLabel(self.card, text=ngrok_info, font=DS.font_normal(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=(5, 20))
+
+        ctk.CTkLabel(self.card, text="FINANCIAL DATA API (FMP)", font=ctk.CTkFont(size=12, weight="bold"), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(32, 10))
+        self.fmp_key_entry = self._create_input(self.card, "FMP API Key (Optional)")
+        fmp_info = "Configuration Guide:\n1. Register free account at financialmodelingprep.com\n2. Get API Key and paste above\n3. FMP (more stable) will be used if provided, otherwise fallback to scraper"
+        ctk.CTkLabel(self.card, text=fmp_info, font=DS.font_normal(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=(5, 20))
+        
+        # About Section
+        ctk.CTkLabel(self.card, text="ABOUT", font=ctk.CTkFont(size=12, weight="bold"), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(32, 10))
+        
+        about_frame = ctk.CTkFrame(self.card, fg_color=DS.BG_ISLAND, corner_radius=DS.RADIUS_M)
+        about_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        ctk.CTkLabel(about_frame, text="Alpha Quant Pro", font=ctk.CTkFont(size=18, weight="bold"), text_color=DS.TEXT_PRIMARY).pack(anchor="w", padx=15, pady=(15, 5))
+        ctk.CTkLabel(about_frame, text="Version 2.0.0", font=DS.font_body(), text_color=DS.ACCENT_BLUE).pack(anchor="w", padx=15, pady=(0, 10))
+        
+        desc_text = "AI-Powered Quantitative Trading Terminal\nProfessional trading automation with real-time analysis"
+        ctk.CTkLabel(about_frame, text=desc_text, font=DS.font_body(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=15, pady=(0, 10))
+        
+        ctk.CTkLabel(about_frame, text="© 2024-2025 Alpha Quant Team. All rights reserved.", font=ctk.CTkFont(size=11), text_color=DS.TEXT_TERTIARY).pack(anchor="w", padx=15, pady=(0, 15))
         
         self._load_saved_config()
 
@@ -1037,22 +1150,18 @@ class ViewSettings(ctk.CTkFrame):
                 self.sw_web_enable.deselect()
                 return
             
-            # Register Callbacks
+            # Delegate to Main App
             app = self.winfo_toplevel()
-            core.web_server.get_config_callback = app._get_web_config
-            core.web_server.set_config_callback = lambda c: app.after(0, app._set_web_config, c)
-            
-            # Start Server
-            if hasattr(app, 'engine'):
-                core.web_server.set_password(password)
-                core.web_server.start_background_server(app.engine)
-                logger.info("Web Dashboard enabled on port 8000")
+            if hasattr(app, "_start_web_persistent"):
+                app._start_web_persistent(password)
             else:
-                # Engine might not be initialized yet, will start when engine starts
-                logger.info("Web Dashboard will start with engine")
+                logger.error("App does not support persistent web server")
+                
         else:
-            core.web_server.stop_background_server()
-            logger.info("Web Dashboard disabled")
+            # Delegate to Main App
+            app = self.winfo_toplevel()
+            if hasattr(app, "_stop_web_persistent"):
+                app._stop_web_persistent()
 
     def _toggle_ngrok(self):
         if self.sw_ngrok_enable.get():
@@ -1061,9 +1170,19 @@ class ViewSettings(ctk.CTkFrame):
                 messagebox.showwarning("配置缺失", "请填写 Ngrok Auth Token\n\n您可以从 dashboard.ngrok.com 获取免费 Token")
                 self.sw_ngrok_enable.deselect()
                 return
-            logger.info("Ngrok tunnel enabled")
+            
+            # Delegate to Main App
+            app = self.winfo_toplevel()
+            if hasattr(app, "_start_ngrok_persistent"):
+                app._start_ngrok_persistent()
+            else:
+                logger.error("App does not support persistent ngrok")
+                
         else:
-            logger.info("Ngrok tunnel disabled")
+            # Delegate to Main App
+            app = self.winfo_toplevel()
+            if hasattr(app, "_stop_ngrok_persistent"):
+                app._stop_ngrok_persistent()
 
     def _load_saved_config(self):
         config = ConfigManager.load()
@@ -1076,16 +1195,18 @@ class ViewSettings(ctk.CTkFrame):
         
         if config.get("ngrok_enabled"): self.sw_ngrok_enable.select()
         if config.get("ngrok_token"): self.ngrok_token_entry.delete(0, "end"); self.ngrok_token_entry.insert(0, config["ngrok_token"])
+        
+        if config.get("fmp_api_key"): self.fmp_key_entry.delete(0, "end"); self.fmp_key_entry.insert(0, config["fmp_api_key"])
 
     def get_config(self):
         return {
             "telegram_enabled": self.sw_enable.get(),
             "telegram_token": self.token_entry.get(),
             "telegram_chat_id": self.chat_entry.get(),
-            "web_enabled": self.sw_web_enable.get(),
             "web_password": self.web_password_entry.get(),
             "ngrok_enabled": self.sw_ngrok_enable.get(),
-            "ngrok_token": self.ngrok_token_entry.get()
+            "ngrok_token": self.ngrok_token_entry.get(),
+            "fmp_api_key": self.fmp_key_entry.get()
         }
 
 class ViewChart(ctk.CTkFrame):
@@ -1136,6 +1257,10 @@ class ViewChart(ctk.CTkFrame):
 class TerminalApple(ctk.CTk):
     def __init__(self):
         super().__init__()
+        self.views = {}
+        self.current_view = None
+        self.current_view_name = None
+        self.engine = None
         self.title("Alpha Quant Pro")
         self.geometry("1400x900")
         self.configure(fg_color=DS.BG_MAIN)
@@ -1152,35 +1277,34 @@ class TerminalApple(ctk.CTk):
                 icon_path = Path("terminal_icon.ico")
             
             if icon_path.exists():
-                self.iconbitmap(str(icon_path))
-        except Exception as e:
-            logger.error(f"Failed to set icon: {e}")
-        
-        # Initialize state
-        self.views = {}
-        self.current_view = None
-        self.current_view_name = None
-        self.engine = None # Initialize engine to None
-        self.last_chart_update = 0 # Initialize chart update timer
-            # Stop Engine
-        self.sidebar = ctk.CTkFrame(self, width=300, fg_color=DS.BG_MAIN, corner_radius=0)
-        self.sidebar.grid(row=0, column=0, sticky="nsew", padx=30, pady=30)
-        # self.sidebar.grid_propagate(False) # Removed to allow vertical expansion
-        
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
         # FIX: Configure grid weights to allow main content to expand
-        self.grid_columnconfigure(0, minsize=300) # Enforce sidebar width
+        self.grid_columnconfigure(0, weight=0) # Sidebar fits content
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
         
-        ctk.CTkLabel(self.sidebar, text="α Alpha\nQuant.", font=DS.font_display_xl(), text_color=DS.TEXT_PRIMARY, justify="left", anchor="w").pack(anchor="w", pady=(40, 60))
+        # Sidebar
+        self.sidebar = ctk.CTkFrame(self, width=260, corner_radius=0, fg_color=DS.BG_MAIN)
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.sidebar.grid_rowconfigure(4, weight=1)
+        self.sidebar.pack_propagate(False) # Fixed width for premium feel
+        
+        # Logo with padding to define sidebar width naturally
+        ctk.CTkLabel(self.sidebar, text="α Alpha\nQuant.", font=DS.font_display_xl(), text_color=DS.TEXT_PRIMARY, justify="left", anchor="w").pack(anchor="w", padx=20, pady=(40, 60))
+        
+        # Menu Items
         self._create_menu_item("⊞  Dashboard", "dashboard", active=True)
         self._create_menu_item("∿  Live Chart", "chart")
         self._create_menu_item("♟  Agents", "agents")
         self._create_menu_item("≡  Logs", "logs")
         self._create_menu_item("📊  Analytics", "analytics")
         self._create_menu_item("⚙  Settings", "settings")
+        
         self.action_area = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.action_area.pack(side="bottom", fill="x", pady=20)
+        self.action_area.pack(side="bottom", fill="x", pady=20, padx=20)
         self.btn_start = CapsuleButton(self.action_area, "START ENGINE", color=DS.ACCENT_BLUE, command=self._start)
         self.btn_start.pack(fill="x", pady=10)
         self.btn_stop = CapsuleButton(self.action_area, "STOP", color=DS.BG_ISLAND, text_color=DS.ACCENT_RED, hover_color="#3A3A3C", command=self._stop)
@@ -1243,7 +1367,7 @@ class TerminalApple(ctk.CTk):
         color = DS.TEXT_PRIMARY if active else DS.TEXT_SECONDARY
         font = ctk.CTkFont(family="Segoe UI", size=16, weight="bold" if active else "normal")
         btn = ctk.CTkButton(self.sidebar, text=text, fg_color=DS.BG_ISLAND if active else "transparent", text_color=color, anchor="w", font=font, hover_color=DS.BG_ISLAND, height=44, corner_radius=12)
-        btn.pack(fill="x", pady=4)
+        btn.pack(fill="x", pady=4, padx=20)
         if view_name:
             btn.configure(command=lambda: self._show_view(view_name))
             self.views[view_name + "_btn"] = btn
@@ -1261,104 +1385,50 @@ class TerminalApple(ctk.CTk):
             new_btn = self.views.get(name + "_btn")
             if new_btn: new_btn.configure(fg_color=DS.BG_ISLAND, text_color=DS.TEXT_PRIMARY, font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"))
 
-    def _start(self):
-        """Start the trading engine"""
-        config = self._get_web_config()
-        
-        # 验证配置
-        is_valid, error_msg = self.views["agents"].validate_config(config)
-        if not is_valid:
-            messagebox.showerror("配置错误", error_msg)
-            return
-        
-        # 保存配置到文件，确保下次启动时保持这些设置
-        ConfigManager.save(config)
-        self.views["dashboard"].status_badge.configure(text="● INITIALIZING...", text_color=DS.ACCENT_ORANGE)
-        self.btn_start.configure(state="disabled", fg_color=DS.BG_ISLAND)
-        threading.Thread(target=self._run_engine, args=(config,), daemon=True).start()
-    
-    def _stop(self):
-        """Stop the trading engine"""
-        if self.engine:
-            self.engine.stop()
-            self.engine = None
-        self.views["dashboard"].status_badge.configure(text="● STOPPED", text_color=DS.ACCENT_RED)
-        self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE)
-
     def _get_web_config(self):
+        """Gather configuration from UI"""
         config = self.views["agents"].get_config()
-        config.update(self.views["settings"].get_config())
+        settings = self.views["settings"].get_config()
+        config.update(settings)
         return config
 
-    def _set_web_config(self, config):
-        # Update ViewAgents
-        view_agents = self.views["agents"]
-        if "symbol" in config: view_agents.symbol_entry.delete(0, "end"); view_agents.symbol_entry.insert(0, config["symbol"])
-        if "lot_size" in config: view_agents.lot_entry.delete(0, "end"); view_agents.lot_entry.insert(0, config["lot_size"])
-        if "risk" in config: view_agents.risk_entry.delete(0, "end"); view_agents.risk_entry.insert(0, config["risk"])
-        
-        # Update Timeframe
-        if "timeframe" in config: view_agents.timeframe_var.set(config["timeframe"])
-        
-        # Update Max Loss
-        if "max_daily_loss" in config: 
-            view_agents.max_loss_entry.delete(0, "end")
-            view_agents.max_loss_entry.insert(0, str(config["max_daily_loss"]))
-        elif "max_loss" in config: 
-            view_agents.max_loss_entry.delete(0, "end")
-            view_agents.max_loss_entry.insert(0, str(config["max_loss"]))
-        
-        # Update News Filter
-        if "news_filter" in config: view_agents.news_filter_var.set(config["news_filter"])
-        if "news_buffer" in config: view_agents.news_buffer_entry.delete(0, "end"); view_agents.news_buffer_entry.insert(0, str(config["news_buffer"]))
-        
-        # Update Trailing Stop
-        if "trailing_enabled" in config: view_agents.trailing_var.set(config["trailing_enabled"])
-        if "trailing_distance" in config: view_agents.trailing_distance_entry.delete(0, "end"); view_agents.trailing_distance_entry.insert(0, str(config["trailing_distance"]))
-        
-        # Update Partial Close
-        if "partial_close_enabled" in config: view_agents.partial_close_var.set(config["partial_close_enabled"])
-        if "partial_close_percent" in config: view_agents.partial_close_percent_entry.delete(0, "end"); view_agents.partial_close_percent_entry.insert(0, str(config["partial_close_percent"]))
-        if "tp1_distance" in config: view_agents.tp1_distance_entry.delete(0, "end"); view_agents.tp1_distance_entry.insert(0, str(config["tp1_distance"]))
-
-        # Update ViewSettings
-        view_settings = self.views["settings"]
-        if "telegram_token" in config: view_settings.token_entry.delete(0, "end"); view_settings.token_entry.insert(0, config["telegram_token"])
-        if "telegram_chat_id" in config: view_settings.chat_entry.delete(0, "end"); view_settings.chat_entry.insert(0, config["telegram_chat_id"])
-        
-        # Handle Risk Mode
-        if "risk_mode" in config:
-            mode = config["risk_mode"]
-            if mode == "risk":
-                view_agents.lot_entry.configure(state="disabled", fg_color=DS.BG_ISLAND)
-                view_agents.risk_entry.configure(state="normal", fg_color=DS.BG_MAIN)
-                config["use_risk_based_sizing"] = True
-            else:
-                view_agents.lot_entry.configure(state="normal", fg_color=DS.BG_MAIN)
-                view_agents.risk_entry.configure(state="disabled", fg_color=DS.BG_ISLAND)
-                config["use_risk_based_sizing"] = False
-
-        # Save Config
-        ConfigManager.save(config)
-        
-        # Sync with Running Engine
-        if self.engine:
-            # Check for critical changes
-            if "symbol" in config and config["symbol"] != str(self.engine.symbols[0]):
-                 messagebox.showwarning("Restart Required", "Symbol changed. Please restart engine to apply.")
-            if "timeframe" in config and config["timeframe"] != self.engine.timeframe:
-                 messagebox.showwarning("Restart Required", "Timeframe changed. Please restart engine to apply.")
+    def _start(self):
+        """Start the trading engine"""
+        try:
+            config = self._get_web_config()
             
-            self.engine.update_config(config)
+            # 验证配置
+            is_valid, error_msg = self.views["agents"].validate_config(config)
+            if not is_valid:
+                messagebox.showerror("配置错误", error_msg)
+                return
             
-        # Update Web Password
-        if "web_password" in config:
-            try:
-                import core.web_server
-                core.web_server.set_password(config["web_password"])
-            except Exception as e:
-                logger.error(f"Failed to update web password: {e}")
-        
+            # 保存配置到文件
+            ConfigManager.save(config)
+            
+            # Update UI
+            self.views["dashboard"].status_badge.configure(text="● STARTING", text_color=DS.ACCENT_ORANGE)
+            self.btn_start.configure(state="disabled", fg_color=DS.BG_ISLAND)
+            self.btn_stop.configure(state="normal", fg_color=DS.ACCENT_RED, text_color=DS.TEXT_PRIMARY)
+            
+            # Clear previous engine if exists
+            if self.engine:
+                self.engine = None
+                
+            # Run Engine in Thread to prevent UI freeze
+            # However, _run_engine starts with non-blocking setup, but engine.run() might be blocking? 
+            # engine.run() in engine_core.py usually starts a loop.
+            # We should run the setup and then let the engine's internal loop handle it.
+            # But here `_run_engine` implementation below handles the thread.
+            
+            # Using 'after' to allow UI to update first
+            self.after(100, lambda: self._run_engine(config))
+            
+        except Exception as e:
+            logger.error(f"Start Error: {e}")
+            messagebox.showerror("启动失败", str(e))
+            self._stop()
+
     def _run_engine(self, config):
         try:
             telegram_notifier = None
@@ -1369,143 +1439,14 @@ class TerminalApple(ctk.CTk):
                 )
                 telegram_notifier.enable()
 
-            # Ngrok Automation
-            if config.get("ngrok_enabled", False):
-                try:
-                    from pyngrok import ngrok, conf
-                    import logging
-                    
-                    # Suppress pyngrok logs
-                    logging.getLogger("pyngrok").setLevel(logging.WARNING)
+            # Enable Ngrok/Web if configured (Persistent Ensure)
+            if config.get("web_enabled", False):
+                 if hasattr(self, "_start_web_persistent"):
+                     self._start_web_persistent(config.get("web_password", ""))
+                 
+                 if config.get("ngrok_enabled", False) and hasattr(self, "_start_ngrok_persistent"):
+                     self._start_ngrok_persistent()
 
-                    # Configure to hide console window on Windows using CREATE_NO_WINDOW
-                    if sys.platform == "win32":
-                        import subprocess
-                        # CREATE_NO_WINDOW = 0x08000000 - completely hides the console window
-                        CREATE_NO_WINDOW = 0x08000000
-                        
-                        # Set on pyngrok config
-                        pyngrok_config = conf.get_default()
-                        pyngrok_config.start_new_session = False # Don't create new session/console group
-                        
-                        # Create startupinfo with SW_HIDE (Standard method)
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        startupinfo.wShowWindow = subprocess.SW_HIDE
-                        pyngrok_config.startup_info = startupinfo
-                        
-                        # Set creation flags to use CREATE_NO_WINDOW (Nuclear method)
-                        pyngrok_config.subprocess_creation_flags = CREATE_NO_WINDOW
-                    
-                    # Set Auth Token
-                    ngrok_token = config.get("ngrok_token", "")
-                    if ngrok_token:
-                        conf.get_default().auth_token = ngrok_token
-                        
-                    # Kill existing tunnels to avoid conflicts
-                    ngrok.kill()
-                    
-                    # Connect Tunnel
-                    public_url = ngrok.connect(8000, "http", pyngrok_config=pyngrok_config).public_url
-                    logger.info(f"Ngrok Tunnel Started: {public_url}")
-                    
-                    # FORCE HIDE WINDOW (Nuclear Option)
-                    if sys.platform == "win32":
-                        try:
-                            import ctypes
-                            ngrok_process = ngrok.get_ngrok_process()
-                            if ngrok_process and ngrok_process.proc:
-                                pid = ngrok_process.proc.pid
-                                
-                                def hide_window_callback(hwnd, _):
-                                    lpdw_process_id = ctypes.c_ulong()
-                                    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw_process_id))
-                                    if lpdw_process_id.value == pid:
-                                        ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
-                                        return False # Stop enumeration
-                                    return True
-                                    
-                                CMPFUNC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-                                ctypes.windll.user32.EnumWindows(CMPFUNC(hide_window_callback), 0)
-                                logger.info(f"Attempted to force hide Ngrok window (PID: {pid})")
-                        except Exception as e:
-                            logger.error(f"Failed to force hide window: {e}")
-                    
-                    # Persistent Window Hider (Daemon Thread)
-                    def _monitor_ngrok_window(pid):
-                        import ctypes
-                        logger.info(f"Starting persistent window monitor for PID {pid}")
-                        # Monitor for 60 seconds (120 * 0.5s)
-                        for i in range(120): 
-                            try:
-                                found = False
-                                def hide_window_callback(hwnd, _):
-                                    nonlocal found
-                                    lpdw_process_id = ctypes.c_ulong()
-                                    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(lpdw_process_id))
-                                    
-                                    # Check by PID
-                                    if lpdw_process_id.value == pid:
-                                        if ctypes.windll.user32.IsWindowVisible(hwnd):
-                                            ctypes.windll.user32.ShowWindow(hwnd, 0) # SW_HIDE
-                                            logger.info(f"Persistent Monitor: Hidden window for PID {pid}")
-                                            found = True
-                                            return False
-                                    
-                                    # Fallback: Check by Title (if PID fails or for child processes)
-                                    length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-                                    if length > 0:
-                                        buff = ctypes.create_unicode_buffer(length + 1)
-                                        ctypes.windll.user32.GetWindowTextW(hwnd, buff, length + 1)
-                                        title = buff.value.lower()
-                                        if "ngrok" in title: # Broad check for any ngrok window
-                                            if ctypes.windll.user32.IsWindowVisible(hwnd):
-                                                ctypes.windll.user32.ShowWindow(hwnd, 0)
-                                                logger.info(f"Persistent Monitor: Hidden window by title '{buff.value}'")
-                                                found = True
-                                                return False
-                                                
-                                    return True
-                                    
-                                CMPFUNC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-                                ctypes.windll.user32.EnumWindows(CMPFUNC(hide_window_callback), 0)
-                                
-                                # If found, we keep checking for a bit longer just in case, but maybe less frequently?
-                                # Actually, ngrok might open multiple windows or re-open? Unlikely.
-                                # But let's keep the loop running to be safe.
-                            except Exception as e:
-                                logger.error(f"Monitor error: {e}")
-                            time.sleep(0.5)
-                            
-                    if sys.platform == "win32" and 'pid' in locals():
-                        threading.Thread(target=_monitor_ngrok_window, args=(pid,), daemon=True).start()
-                    
-                    # Send Notification
-                    if telegram_notifier:
-                        # [SYSTEM] Engine Started Account: (acc no) Equity: (amount） Symbols: (symbol)
-                        acc_no = "Unknown"
-                        equity = "Unknown"
-                        try:
-                            import MetaTrader5 as mt5
-                            acc_info = mt5.account_info()
-                            if acc_info:
-                                acc_no = acc_info.login
-                                equity = acc_info.equity
-                        except:
-                            pass
-                            
-                        msg = (
-                            f"[SYSTEM] Engine Started Account: {acc_no} Equity: {equity} Symbols: {config.get('symbol', 'XAUUSD')}\n"
-                            f"[Remote Dashboard]: {public_url}"
-                            f"[Password]: {config.get('web_password', 'Not Set')}\n"
-                        )
-                        telegram_notifier.send_message(msg)
-                        
-                except Exception as e:
-                    logger.error(f"Ngrok Start Failed: {e}")
-                    if telegram_notifier:
-                        telegram_notifier.send_message(f"⚠️ **Ngrok Error**: Failed to start tunnel.\n{str(e)}")
-            
             # Parse symbols
             symbols_str = config["symbol"]
             if "," in symbols_str:
@@ -1530,12 +1471,13 @@ class TerminalApple(ctk.CTk):
                 news_calendar=self.news_calendar,
                 telegram_notifier=telegram_notifier if 'telegram_notifier' in locals() else None,
                 symbols=symbols,
+                timeframe=config.get("timeframe", "M15"),
                 lot_size=float(config["lot_size"]),
                 mt5_path=config["mt5"] if config["mt5"] != "auto" else None,
                 max_spread=int(config.get("max_spread", 50)),
                 max_daily_loss=float(config.get("max_daily_loss", config.get("max_loss", 500.0))),
                 min_equity=float(config.get("min_equity", 0)),
-                use_risk_based_sizing=True if float(config["risk"]) > 0 else False,
+                use_risk_based_sizing=(config.get("risk_mode") == "risk"),
                 risk_percent=float(config["risk"]) / 100.0,
                 news_filter_enabled=config.get("news_filter", False),
                 news_buffer_minutes=int(config.get("news_buffer", 30)),
@@ -1552,10 +1494,42 @@ class TerminalApple(ctk.CTk):
                 core.web_server.set_engine(self.engine)
             except Exception as e:
                 logger.error(f"Failed to sync engine with web server: {e}")
+                
+            # Send Notification (Clean - Engine Only)
+            if telegram_notifier:
+                # [SYSTEM] Engine Started Account: (acc no) Equity: (amount） Symbols: (symbol)
+                acc_no = "Unknown"
+                equity = "Unknown"
+                try:
+                    import MetaTrader5 as mt5
+                    if not mt5.initialize():
+                        logger.warning(f"MT5 Init failed for Tg Msg: {mt5.last_error()}")
+                    acc_info = mt5.account_info()
+                    if acc_info:
+                        acc_no = acc_info.login
+                        equity = acc_info.equity
+                except Exception as e:
+                    logger.error(f"Failed to get acc info for Tg: {e}")
+                    
+                msg = (
+                    f"🚀 [SYSTEM] Engine Started\n"
+                    f"💳 Account: {acc_no}\n"
+                    f"💰 Equity: ${equity}\n"
+                    f"📈 Symbols: {config.get('symbol', 'XAUUSD')}"
+                )
+                telegram_notifier.send_message(msg)
 
             # Run Engine (Synchronous wrapper around async loop)
+            # Starting thread handled by engine? No, engine.run() is blocking.
+            # We must wrap it in a thread.
+            
+            def run_in_thread():
+                self.engine.run()
+                
+            self.engine_thread = threading.Thread(target=run_in_thread, daemon=True)
+            self.engine_thread.start()
+            
             self.after(0, lambda: self.btn_stop.configure(state="normal"))
-            self.engine.run()
 
         except Exception as e:
             error_msg = str(e)
@@ -1563,80 +1537,26 @@ class TerminalApple(ctk.CTk):
             self.after(0, lambda: self.views["dashboard"].status_badge.configure(text="● ERROR", text_color=DS.ACCENT_RED))
             self.after(0, lambda: self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE))
             self.after(0, lambda: messagebox.showerror("启动失败", f"引擎启动失败:\n\n{error_msg}\n\n请检查:\n1. MT5 是否已打开并登录\n2. Agent Bundle 是否有效\n3. 网络连接是否正常\n4. 查看 Logs 面板获取详细错误信息"))
-            current_time = time.time()
-            if current_time - self.last_chart_update >= 1.0:
-                if "chart" in self.views and "history" in status:
-                    self.views["chart"].update_chart(status["history"])
-                self.last_chart_update = current_time
-            if "dashboard" in self.views:
-                price = status.get("price", 0.0)
-                signal = status.get("signal", "HOLD")
-                conf = status.get("confidence", 0.0)
-                balance = status.get("balance", 0.0)
-                equity = status.get("equity", 0.0)
-                pnl = equity - balance
-                
-                # SYNC WITH WEB SERVER: Update engine attributes so web server can read them
-                if self.engine:
-                    self.engine.last_price = price
-                    self.engine.last_equity = equity
-                    self.engine.last_balance = balance
-                    self.engine.last_daily_pnl = pnl
-                    # Cache positions for web server
-                    if "positions" in status:
-                        self.engine.open_positions_cache = status["positions"]
-                    elif "trades" in status: 
-                        # Fallback if positions key missing but trades present (unlikely with new engine)
-                        pass 
-                    else:
-                        self.engine.open_positions_cache = self.engine.get_open_positions()
-
-                self.views["dashboard"].update_stats(signal, conf, price, balance, equity, pnl)
-                if "trades" in status: self.views["dashboard"].update_trades(status["trades"])
-                positions = []
-                if self.engine: positions = self.engine.get_open_positions()
-                self.views["dashboard"].update_positions(positions)
-        except Exception as e:
-            logger.error(f"UI Update Error: {e}")
 
     def _on_status_update(self, status):
-        try:
-            current_time = time.time()
-            if current_time - self.last_chart_update >= 1.0:
-                if "chart" in self.views and "history" in status:
-                    self.views["chart"].update_chart(status["history"])
-                self.last_chart_update = current_time
-            if "dashboard" in self.views:
-                price = status.get("price", 0.0)
-                signal = status.get("signal", "HOLD")
-                conf = status.get("confidence", 0.0)
-                balance = status.get("balance", 0.0)
-                equity = status.get("equity", 0.0)
-                pnl = equity - balance
-                total_profit = status.get("total_profit", 0.0)
-                
-                # SYNC WITH WEB SERVER: Update engine attributes so web server can read them
-                if self.engine:
-                    self.engine.last_price = price
-                    self.engine.last_equity = equity
-                    self.engine.last_balance = balance
-                    self.engine.last_daily_pnl = pnl
-                    self.engine.last_total_profit = total_profit
-                    self.engine.last_confidence = conf
-                    # Cache positions for web server
-                    if "trades" in status: 
-                        # If trades are in status, use them, otherwise query engine
-                        pass 
-                    self.engine.open_positions_cache = self.engine.get_open_positions()
+        # Ensure UI updates run on main thread to avoid Race Conditions and "bad window path" errors
+        self.after(0, lambda: self._safe_status_update(status))
 
-                # UI Updates (Must be on main thread)
-                self.after(0, lambda: self.views["dashboard"].update_stats(signal, conf, price, balance, equity, pnl))
-                if "trades" in status: 
-                    self.after(0, lambda: self.views["dashboard"].update_trades(status["trades"]))
+    def _safe_status_update(self, status):
+        try:
+            # Debug Log (Throttle to avoid spam?)
+            # logger.info(f"UI Update: Pos={len(status.get('positions',[]))} Hist={len(status.get('history',[]))}")
+            
+            # Update Dashboard
+            if self.views.get("dashboard"):
+                self.views["dashboard"].update_status(status)
                 
-                positions = []
-                if self.engine: positions = self.engine.get_open_positions()
-                self.after(0, lambda: self.views["dashboard"].update_positions(positions))
+            # Update Chart
+            if self.views.get("chart"):
+                chart_data = status.get("chart_data")
+                if chart_data is not None and not chart_data.empty:
+                    self.views["chart"].update_chart(chart_data)
+                
         except Exception as e:
             logger.error(f"UI Update Error: {e}")
 
@@ -1652,7 +1572,7 @@ class TerminalApple(ctk.CTk):
             
         self.views["dashboard"].status_badge.configure(text="● STOPPED", text_color=DS.ACCENT_RED)
         self.btn_start.configure(state="normal", fg_color=DS.ACCENT_BLUE)
-        self.btn_stop.configure(state="disabled")
+        self.btn_stop.configure(state="disabled", fg_color=DS.BG_ISLAND, text_color=DS.ACCENT_RED)
     
     def _check_for_updates(self):
         """Check for updates on startup"""

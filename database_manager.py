@@ -110,6 +110,20 @@ class DatabaseManager:
                 # Create index for faster queries
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_status ON trades(status)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_open_time ON trades(open_time)")
+
+                # News Events Table (Cache)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS news_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    time TEXT NOT NULL,
+                    impact TEXT NOT NULL,
+                    country TEXT,
+                    currency TEXT,
+                    source TEXT DEFAULT 'FMP'
+                )
+                """)
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_news_time ON news_events(time)")
                 
                 conn.commit()
                 logger.info(f"Database initialized at {self.db_path}")
@@ -290,6 +304,73 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get total profit: {e}")
             return 0.0
+
+    def save_news_events(self, events: List[Dict]):
+        """Save news events to cache"""
+        with self.lock:
+            try:
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    # Clear today's existing cache to avoid duplicates if re-fetching
+                    # Actually, we should probably clear old news periodically, but for now let's just insert
+                    # A better strategy: Delete events for the same day before inserting
+                    if not events: return
+                    
+                    # Extract date from first event to clear that day's cache
+                    first_time = events[0]['time']
+                    if isinstance(first_time, datetime):
+                        date_str = first_time.strftime('%Y-%m-%d')
+                    else:
+                        date_str = first_time.split(' ')[0]
+                        
+                    cursor.execute("DELETE FROM news_events WHERE time LIKE ?", (f"{date_str}%",))
+                    
+                    for event in events:
+                        time_str = event['time'].strftime('%Y-%m-%d %H:%M:%S') if isinstance(event['time'], datetime) else event['time']
+                        cursor.execute("""
+                        INSERT INTO news_events (title, time, impact, country, currency, source)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """, (
+                            event['name'], 
+                            time_str, 
+                            event['impact'], 
+                            event.get('country', ''), 
+                            event.get('currency', ''),
+                            event.get('source', 'FMP')
+                        ))
+                    conn.commit()
+                    logger.info(f"Saved {len(events)} news events to cache")
+            except Exception as e:
+                logger.error(f"Failed to save news events: {e}")
+
+    def get_today_news_events(self) -> List[Dict]:
+        """Get cached news events for today"""
+        try:
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM news_events WHERE time LIKE ? ORDER BY time ASC", (f"{today_str}%",))
+                rows = cursor.fetchall()
+                
+                events = []
+                for row in rows:
+                    # Convert back to datetime
+                    time_obj = datetime.strptime(row['time'], '%Y-%m-%d %H:%M:%S')
+                    # Assume UTC for stored times
+                    import pytz
+                    time_obj = pytz.UTC.localize(time_obj)
+                    
+                    events.append({
+                        'name': row['title'],
+                        'time': time_obj,
+                        'impact': row['impact'],
+                        'country': row['country'],
+                        'currency': row['currency']
+                    })
+                return events
+        except Exception as e:
+            logger.error(f"Failed to get cached news: {e}")
+            return []
 
 if __name__ == "__main__":
     # Test
