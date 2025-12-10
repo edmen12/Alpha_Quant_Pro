@@ -53,7 +53,10 @@ def main():
             time.sleep(COOLDOWN_SECONDS)
 
 if __name__ == "__main__":
-    if not os.path.exists(TARGET_SCRIPT):
+    if getattr(sys, 'frozen', False):
+        # Running as EXE, skip script check
+        main()
+    elif not os.path.exists(TARGET_SCRIPT):
         print(f"Error: {TARGET_SCRIPT} not found!")
     else:
         main()

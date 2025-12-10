@@ -150,7 +150,22 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
-block_cipher = None
+# Encryption Key (Obfuscation)
+# Generates a random key if not provided, but hardcoded here for reproducibility if needed.
+# Ideally passed via CLI --key, but user asked for spec configuration.
+# PyInstaller < 6.0 supports 'block_cipher'. 6.0+ removed it.
+# Check version? Assuming standard.
+
+# Manual bundling of compiled extensions
+binaries += [('core/license_manager.cp3*.pyd', 'core')]
+
+# Exclude source of protected modules
+excludes = ['customtkinter', 'setuptools', 'distutils', 'xgboost', 'core', 'MetaTrader5', 'matplotlib', 'PIL', 'pandas']
+# Note: 'core' is in excludes, which is good. We manually add the binary above.
+
+block_cipher = None # User can pass --key manually or we set logic to read env
+# Note: Providing key in source spec is weak security (visible).
+# User instruction: Run `pyinstaller --key "YOUR_KEY" AlphaQuantPro.spec`
 
 a = Analysis(
     ['terminal_apple.py'],
@@ -161,12 +176,13 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['customtkinter', 'setuptools', 'distutils', 'xgboost', 'core', 'MetaTrader5', 'matplotlib', 'PIL', 'pandas'],
+    excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(

@@ -312,14 +312,31 @@ async def get_analytics():
             metrics = data.get('metrics', {})
             curve = data.get('curve', {'times': [], 'equity': []})
             
+            # Helper to sanitize data for JSON serialization (handle numpy & datetime)
+            def _sanitize(obj):
+                if hasattr(obj, 'item'): # Numpy scalar
+                    return obj.item()
+                if hasattr(obj, 'tolist'): # Numpy array
+                    return obj.tolist()
+                if hasattr(obj, 'isoformat'): # Datetime
+                    return obj.isoformat()
+                return obj
+
+            # Sanitize Metrics
+            safe_metrics = {k: _sanitize(v) for k, v in metrics.items()}
+            
+            # Sanitize Curve
+            safe_times = [_sanitize(t) for t in curve.get('times', [])]
+            safe_equity = [_sanitize(e) for e in curve.get('equity', [])]
+            
             return AnalyticsResponse(
-                win_rate=metrics.get('win_rate', 0.0),
-                profit_factor=metrics.get('profit_factor', 0.0),
-                sharpe_ratio=metrics.get('sharpe_ratio', 0.0),
-                max_drawdown=metrics.get('max_drawdown', 0.0),
-                total_trades=metrics.get('total_trades', 0),
-                avg_duration=metrics.get('avg_duration', 0.0),
-                equity_curve=curve
+                win_rate=float(safe_metrics.get('win_rate', 0.0)),
+                profit_factor=float(safe_metrics.get('profit_factor', 0.0)),
+                sharpe_ratio=float(safe_metrics.get('sharpe_ratio', 0.0)),
+                max_drawdown=float(safe_metrics.get('max_drawdown', 0.0)),
+                total_trades=int(safe_metrics.get('total_trades', 0)),
+                avg_duration=float(safe_metrics.get('avg_duration', 0.0)),
+                equity_curve={'times': safe_times, 'equity': safe_equity}
             )
         else:
             # Fallback

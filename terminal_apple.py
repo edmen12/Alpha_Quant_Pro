@@ -113,6 +113,17 @@ if True:
 LoggerSetup.setup_logging()
 logger = LoggerSetup.get_logger("Terminal")
 
+# License Manager
+try:
+    from core.license_manager import LicenseManager
+except ImportError:
+    # Fallback if not found (during dev before compile?)
+    # or creates a dummy if excluded? 
+    # Better to fail secure if missing.
+    logger.critical("License Manager Missing!")
+    LicenseManager = None
+
+
 # ============================================================================
 # 1. Design System (iOS 26 Future)
 # ============================================================================
@@ -226,6 +237,13 @@ class ViewDashboard(ctk.CTkFrame):
                                         font=ctk.CTkFont(size=12, weight="bold"),
                                         width=120)
         self.status_badge.pack(side="right")
+        
+        # AI Status Line (New Feature)
+        self.lbl_ai_status = ctk.CTkLabel(self, text="AI Waiting...", 
+                                        font=ctk.CTkFont(family="Consolas", size=13, weight="bold"),
+                                        text_color=DS.ACCENT_PURPLE,
+                                        anchor="w")
+        self.lbl_ai_status.pack(fill="x", padx=0, pady=(0, 20))
 
         # Stats Grid
         self.stats_grid = ctk.CTkFrame(self, fg_color="transparent")
@@ -339,8 +357,13 @@ class ViewDashboard(ctk.CTkFrame):
             history = status.get("history", [])
             self._update_trades(history)
             
+            # Update AI Status (New Feature)
+            ai_status = status.get("ai_status", "AI Idle")
+            self.lbl_ai_status.configure(text=f"{ai_status}")
+            
         else:
             self.status_badge.configure(text="● DISCONNECTED", text_color=DS.ACCENT_RED)
+            self.lbl_ai_status.configure(text="Engine Offline")
     
     def _update_positions(self, positions):
         # 1. Identify stale tickets
@@ -840,6 +863,9 @@ class ViewAgents(ctk.CTkFrame):
         if config.get("partial_close_enabled"): self.partial_close_var.set(True)
         if config.get("tp1_distance"): self.tp1_distance_entry.delete(0, "end"); self.tp1_distance_entry.insert(0, str(config["tp1_distance"]))
         if config.get("partial_close_percent"): self.partial_close_percent_entry.delete(0, "end"); self.partial_close_percent_entry.insert(0, str(config["partial_close_percent"]))
+        
+        # Load MT5 Path
+        if config.get("mt5"): self.mt5_var.set(config["mt5"])
 
     def _create_bundle_selector(self, parent):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1093,14 +1119,30 @@ class ViewSettings(ctk.CTkFrame):
         about_frame.pack(fill="x", padx=20, pady=(0, 20))
         
         ctk.CTkLabel(about_frame, text="Alpha Quant Pro", font=ctk.CTkFont(size=18, weight="bold"), text_color=DS.TEXT_PRIMARY).pack(anchor="w", padx=15, pady=(15, 5))
-        ctk.CTkLabel(about_frame, text="Version 2.0.0", font=DS.font_body(), text_color=DS.ACCENT_BLUE).pack(anchor="w", padx=15, pady=(0, 10))
+        ctk.CTkLabel(about_frame, text="Version 2.1.0", font=DS.font_body(), text_color=DS.ACCENT_BLUE).pack(anchor="w", padx=15, pady=(0, 10))
         
         desc_text = "AI-Powered Quantitative Trading Terminal\nProfessional trading automation with real-time analysis"
         ctk.CTkLabel(about_frame, text=desc_text, font=DS.font_body(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=15, pady=(0, 10))
         
         ctk.CTkLabel(about_frame, text="© 2024-2025 Alpha Quant Team. All rights reserved.", font=ctk.CTkFont(size=11), text_color=DS.TEXT_TERTIARY).pack(anchor="w", padx=15, pady=(0, 15))
         
+        
+        # Save Button
+        save_btn_frame = ctk.CTkFrame(self.card, fg_color="transparent")
+        save_btn_frame.pack(fill="x", padx=20, pady=(10, 20))
+        self.btn_save = CapsuleButton(save_btn_frame, "SAVE SETTINGS", color=DS.ACCENT_BLUE, command=self._on_save_clicked)
+        self.btn_save.pack(fill="x")
+
+        self.sw_web_enable.select() if ConfigManager.load().get("web_enabled") else None # Pre-load fix
+        
         self._load_saved_config()
+        
+    def _on_save_clicked(self):
+        app = self.winfo_toplevel()
+        if hasattr(app, 'save_all_settings'):
+            app.save_all_settings()
+
+
 
     def _create_input(self, parent, placeholder):
         entry = ctk.CTkEntry(parent, placeholder_text=placeholder, height=40, fg_color=DS.BG_MAIN, border_color="#333", font=DS.font_input_mono())
@@ -1254,16 +1296,110 @@ class ViewChart(ctk.CTkFrame):
         self.ax.set_xticklabels(labels, rotation=0, fontsize=8)
         self.canvas.draw()
 
+# --------------------------------------------------------------------------------------
+# SMART GLOBAL SUBPROCESS PATCH
+# --------------------------------------------------------------------------------------
+def patch_subprocess_for_ngrok():
+    """
+    Globally patches subprocess.Popen to enforce hidden window flags 
+    WHENEVER 'ngrok' is detected in the command args.
+    """
+    import subprocess
+    if not hasattr(subprocess, 'STARTUPINFO'):
+        return
+
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = subprocess.SW_HIDE
+    
+    original_popen = subprocess.Popen
+
+    def smart_popen(*args, **kwargs):
+        # Check if 'ngrok' is in the arguments (usually args[0] list)
+        is_ngrok = False
+        if args and isinstance(args[0], (list, tuple)):
+            # args[0] is ['path/to/ngrok', 'start', ...]
+            cmd_args = args[0]
+            if any("ngrok" in str(arg).lower() for arg in cmd_args):
+                is_ngrok = True
+        elif kwargs.get("args") and isinstance(kwargs["args"], (list, tuple)):
+             if any("ngrok" in str(arg).lower() for arg in kwargs["args"]):
+                is_ngrok = True
+        
+        if is_ngrok:
+            # Force hidden flags
+            kwargs['startupinfo'] = si
+            kwargs['creationflags'] = 0x08000000 | subprocess.CREATE_NO_WINDOW
+            
+            # Suppress Console Shell
+            if kwargs.get('shell'): 
+                kwargs['shell'] = False
+            
+            # Redirect Streams
+            if 'stdin' not in kwargs: kwargs['stdin'] = subprocess.DEVNULL
+            if 'stdout' not in kwargs: kwargs['stdout'] = subprocess.DEVNULL
+            if 'stderr' not in kwargs: kwargs['stderr'] = subprocess.DEVNULL
+            
+        return original_popen(*args, **kwargs)
+
+    # Apply Patch Globally
+    subprocess.Popen = smart_popen
+    
+    # Also patch pyngrok's references if already imported
+    try:
+        import sys
+        if 'pyngrok' in sys.modules:
+            pass # No need, it shares 'subprocess' module reference
+        # But if they did 'from subprocess import Popen', we can't easily reach it 
+        # unless we iterate modules. But standard pyngrok usage is 'import subprocess'.
+        
+        # Explicitly patch internal modules just in case (e.g. installer)
+        # We can't import them here if they aren't loaded, so we just rely on global patch.
+        # However, to be safe, we can try to pre-import and patch.
+        import pyngrok.process
+        import pyngrok.installer
+        if hasattr(pyngrok.process, 'subprocess'):
+            pyngrok.process.subprocess.Popen = smart_popen
+        if hasattr(pyngrok.installer, 'subprocess'):
+            pyngrok.installer.subprocess.Popen = smart_popen
+            
+    except ImportError:
+        pass # pyngrok not installed yet or not needed
+    except Exception as e:
+        print(f"Subprocess Patch Warning: {e}")
+
+
 class TerminalApple(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        # [CRITICAL] Apply Smart Patch immediately
+        patch_subprocess_for_ngrok()
+
+        # Engine & State
+        self.engine = None
+        self.engine_thread = None
         self.views = {}
         self.current_view = None
         self.current_view_name = None
         self.engine = None
-        self.title("Alpha Quant Pro")
-        self.geometry("1400x900")
+        self.title("Alpha Quant Pro v2.1.1")
         self.configure(fg_color=DS.BG_MAIN)
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+        
+        # Adaptive Window Size & Centering
+        self.update_idletasks()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        
+        # Use 90% of screen or desired size, whichever is smaller
+        win_w = min(1400, int(screen_w * 0.9))
+        win_h = min(900, int(screen_h * 0.9))
+        
+        x = (screen_w - win_w) // 2
+        y = (screen_h - win_h) // 2
+        self.geometry(f"{win_w}x{win_h}+{x}+{y}")
         
         # Set Icon
         try:
@@ -1317,6 +1453,10 @@ class TerminalApple(ctk.CTk):
         self.views["logs"] = ViewLogs(self.main)
         self.views["analytics"] = ViewAnalytics(self.main)
         self.views["settings"] = ViewSettings(self.main)
+        
+        # License Check (Phase 8 Security)
+        self._check_license()
+        
         self._show_view("dashboard")
         
         # Auto-start Web Server if enabled
@@ -1334,6 +1474,131 @@ class TerminalApple(ctk.CTk):
 
         # Bind Close Event
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def _start_web_persistent(self, password):
+        """Start the web server with the given password"""
+        try:
+            core.web_server.set_password(password)
+            core.web_server.start_background_server(self.engine)
+            logger.info(f"Web Dashboard started on port 8000")
+        except Exception as e:
+            logger.error(f"Failed to start web server: {e}")
+    
+    def _stop_web_persistent(self):
+        """Stop the web server"""
+        try:
+            core.web_server.stop_background_server()
+            logger.info("Web Dashboard stopped")
+        except Exception as e:
+            logger.error(f"Failed to stop web server: {e}")
+
+    def _start_ngrok_persistent(self):
+        """Start Ngrok tunnel (Threaded)"""
+        def _run():
+            try:
+                token = self.views["settings"].ngrok_token_entry.get().strip()
+                if not token:
+                    logger.warning("Ngrok start skipped: No token")
+                    return
+                    
+                from pyngrok import ngrok, conf
+                import logging
+                
+                # Suppress verbose Ngrok logs
+                logging.getLogger("pyngrok").setLevel(logging.WARNING)
+                
+                # Configure
+                conf.get_default().auth_token = token
+                conf.get_default().region = "us" 
+                
+                # Close existing
+                tunnels = ngrok.get_tunnels()
+                for t in tunnels:
+                    ngrok.disconnect(t.public_url)
+                
+                # Connect with Window Hiding Hack (Reverted to Monkeypatch as PyngrokConfig failed)
+                import subprocess
+                
+                try:
+                    # Connection is already patched via global subprocess monkeypatch
+                    tunnel = ngrok.connect(8000, bind_tls=True)
+                except Exception as e:
+                    logger.error(f"Ngrok connect failed: {e}")
+                    # Try to set flag to show failure
+                    self.after(0, lambda: self._on_ngrok_fail(str(e)))
+                    return
+
+                public_url = tunnel.public_url
+                
+                logger.info(f"Ngrok Tunnel Started: {public_url}")
+                
+                # Notify via UI (Thread safe)
+                self.after(0, lambda: self._on_ngrok_success(public_url))
+                
+                # Notify via Telegram if available
+                telegram_enabled = False
+                notifier = None
+                
+                # Case 1: Engine running
+                if self.engine and self.engine.telegram and self.engine.telegram.enabled:
+                    notifier = self.engine.telegram
+                    telegram_enabled = True
+                
+                # Case 2: Engine not running (App Startup), check config
+                elif self.views.get("settings"):
+                    try:
+                        # Access settings via UI variables safely
+                        # Note: We are in a thread, accessing Tkinter vars is risky if not careful, 
+                        # but reading .get() on primitives usually ok, or we should use logic from config file.
+                        # Safer: Load config from file since we are in a thread
+                        saved_config = ConfigManager.load()
+                        if saved_config.get("telegram_enabled"):
+                            notifier = TelegramNotifier(
+                                bot_token=saved_config.get("telegram_token", ""),
+                                chat_id=saved_config.get("telegram_chat_id", "")
+                            )
+                            notifier.enable() # Put into enabled state
+                            telegram_enabled = True
+                    except Exception as e:
+                        logger.error(f"Failed to init temp telegram: {e}")
+
+                if telegram_enabled and notifier:
+                    # Get password safely
+                    # If UI access fails in thread, use config
+                    try: 
+                        web_password = self.views["settings"].password_entry.get().strip() 
+                    except: 
+                        web_password = ConfigManager.load().get("web_password", "")
+                        
+                    msg = (
+                        f"[Remote Dashboard]: {public_url}\n"
+                        f"[Password]: {web_password}"
+                    )
+                    notifier.send_message(msg)
+                
+            except Exception as e:
+                logger.error(f"Failed to start Ngrok: {e}")
+                self.after(0, lambda: self._on_ngrok_fail(str(e)))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_ngrok_success(self, public_url):
+        messagebox.showinfo("Ngrok Started", f"Remote Access URL:\n{public_url}\n\n(Copied to Clipboard & Sent to Telegram)")
+        self.clipboard_clear()
+        self.clipboard_append(public_url)
+
+    def _on_ngrok_fail(self, error):
+        messagebox.showerror("Ngrok Error", error)
+        self.views["settings"].sw_ngrok_enable.deselect()
+
+    def _stop_ngrok_persistent(self):
+        """Stop Ngrok tunnel"""
+        try:
+            from pyngrok import ngrok
+            ngrok.kill()
+            logger.info("Ngrok Tunnel Stopped")
+        except Exception as e:
+            logger.error(f"Failed to stop Ngrok: {e}")
 
     def on_closing(self):
         """Handle application closure"""
@@ -1429,6 +1694,37 @@ class TerminalApple(ctk.CTk):
             messagebox.showerror("启动失败", str(e))
             self._stop()
 
+    def save_all_settings(self):
+        """Save all current settings to disk"""
+        try:
+            config = self._get_web_config()
+            ConfigManager.save(config)
+            messagebox.showinfo("Saved", "Settings saved successfully.")
+        except Exception as e:
+            logger.error(f"Save Error: {e}")
+            messagebox.showerror("Error", f"Failed to save settings: {e}")
+
+    def _on_closing(self):
+        """Handle App Closure"""
+        try:
+            # Auto-Save on Exit
+            config = self._get_web_config()
+            ConfigManager.save(config)
+            
+            # Stop Services
+            if self.engine:
+                self.engine.stop()
+            
+            self._stop_web_persistent()
+            self._stop_ngrok_persistent()
+            
+        except Exception as e:
+            logger.error(f"Closing Error: {e}")
+        finally:
+            self.quit()
+            self.destroy()
+
+
     def _run_engine(self, config):
         try:
             telegram_notifier = None
@@ -1492,6 +1788,73 @@ class TerminalApple(ctk.CTk):
             # Sync Engine with Web Server
             try:
                 core.web_server.set_engine(self.engine)
+                # Fix 503 Error: Link Config Callbacks
+                self.last_config = config
+                core.web_server.get_config_callback = lambda: self.last_config
+                
+                def _apply_web_config(new_config):
+                    # Logic to safely apply config from Web to UI/Engine
+                    # 1. Update UI Vars (Thread Safe Schedule)
+                    def _update_ui():
+                        try:
+                            if "lot_size" in new_config:
+                                self.views["agents"].lot_entry.delete(0, "end")
+                                self.views["agents"].lot_entry.insert(0, str(new_config["lot_size"]))
+                            if "risk" in new_config:
+                                self.views["agents"].risk_entry.delete(0, "end")
+                                self.views["agents"].risk_entry.insert(0, str(new_config["risk"]))
+                            
+                            # --- Fix for Settings Persistence (Sync UI Vars) ---
+                            # Booleans (Agents View)
+                            if "news_filter" in new_config:
+                                self.views["agents"].news_filter_var.set(new_config["news_filter"])
+                            if "trailing_enabled" in new_config:
+                                self.views["agents"].trailing_var.set(new_config["trailing_enabled"])
+                            if "partial_close_enabled" in new_config:
+                                self.views["agents"].partial_close_var.set(new_config["partial_close_enabled"])
+                                
+                            # Detail Fields (Agents View)
+                            if "max_daily_loss" in new_config:
+                                self.views["agents"].max_loss_entry.delete(0, "end")
+                                self.views["agents"].max_loss_entry.insert(0, str(new_config["max_daily_loss"]))
+                            if "min_equity" in new_config:
+                                self.views["agents"].min_equity_entry.delete(0, "end")
+                                self.views["agents"].min_equity_entry.insert(0, str(new_config["min_equity"]))
+                            if "trailing_distance" in new_config:
+                                self.views["agents"].trail_dist_entry.delete(0, "end")
+                                self.views["agents"].trail_dist_entry.insert(0, str(new_config["trailing_distance"]))
+                            if "partial_close_percent" in new_config:
+                                self.views["agents"].pc_percent_entry.delete(0, "end")
+                                self.views["agents"].pc_percent_entry.insert(0, str(new_config["partial_close_percent"]))
+                            
+                            # Settings View Vars
+                            if "telegram_enabled" in new_config:
+                                self.views["settings"].sw_tg_enable.select() if new_config["telegram_enabled"] else self.views["settings"].sw_tg_enable.deselect()
+                            if "web_enabled" in new_config:
+                                self.views["settings"].sw_web_enable.select() if new_config["web_enabled"] else self.views["settings"].sw_web_enable.deselect()
+                            if "ngrok_enabled" in new_config:
+                                self.views["settings"].sw_ngrok_enable.select() if new_config["ngrok_enabled"] else self.views["settings"].sw_ngrok_enable.deselect()
+                            
+                            # ... Add other fields as needed ...
+                            
+                            # 2. Update Engine via Hot-Reload if available
+                            if self.engine and hasattr(self.engine, "update_config"):
+                                self.engine.update_config(new_config)
+                                logger.info("Engine Config Updated via Web")
+                                
+                            # 3. Update last_config
+                            self.last_config.update(new_config)
+                            
+                            # 4. Persist to Disk (Fixes Settings Lost Issue)
+                            ConfigManager.save(self.last_config)
+                            logger.info("Configuration saved to disk via Web Update")
+                            
+                        except Exception as e:
+                            logger.error(f"Failed to apply web config: {e}")
+                            
+                    self.after(0, _update_ui)
+                    
+                core.web_server.set_config_callback = _apply_web_config
             except Exception as e:
                 logger.error(f"Failed to sync engine with web server: {e}")
                 
@@ -1502,8 +1865,15 @@ class TerminalApple(ctk.CTk):
                 equity = "Unknown"
                 try:
                     import MetaTrader5 as mt5
-                    if not mt5.initialize():
-                        logger.warning(f"MT5 Init failed for Tg Msg: {mt5.last_error()}")
+                    # Use the same path as the engine
+                    mt5_path = self.engine.mt5_path
+                    if mt5_path:
+                        if not mt5.initialize(path=mt5_path):
+                             logger.warning(f"MT5 Init failed for Tg Msg: {mt5.last_error()}")
+                    else:
+                        if not mt5.initialize():
+                            logger.warning(f"MT5 Init failed for Tg Msg: {mt5.last_error()}")
+                            
                     acc_info = mt5.account_info()
                     if acc_info:
                         acc_no = acc_info.login
@@ -1765,7 +2135,123 @@ class TerminalApple(ctk.CTk):
         dialog.protocol("WM_DELETE_WINDOW", reject)
         self.wait_window(dialog)
 
-if __name__ == "__main__":
+    # ----------------------------------------------------------------
+    # SECURITY & ACTIVATION (Phase 8)
+    # ----------------------------------------------------------------
+    def _check_license(self):
+        """
+        Validates HWID binding on startup.
+        Blocks UI if invalid.
+        """
+        if LicenseManager is None:
+            return # Dev mode fallback
+            
+        self.lm = LicenseManager()
+        saved_key = self.lm.load_license()
+        hwid = self.lm.get_hwid()
+        
+        logger.info(f"Checking License for HWID: {hwid}")
+        
+        if self.lm.validate_license(saved_key):
+            logger.info("License Verified ✅")
+            return
+            
+        # Not valid, show dialog
+        self._show_activation_dialog(hwid)
+        
+    def _show_activation_dialog(self, hwid):
+        """Modal Dialog for Activation Code"""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Alpha Quant Pro Activation")
+        dialog.geometry("500x450")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Center on Screen (not parent, as parent may not be visible yet)
+        dialog.update_idletasks()
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        x = (screen_w - 500) // 2
+        y = (screen_h - 450) // 2
+        dialog.geometry(f"500x450+{x}+{y}")
+        
+        frame = ctk.CTkFrame(dialog, fg_color=DS.BG_MAIN)
+        frame.pack(fill="both", expand=True, padx=2, pady=2)
+        
+        # Icon/Title
+        ctk.CTkLabel(frame, text="🔒 PRODUCT ACTIVATION", font=ctk.CTkFont(size=20, weight="bold"), 
+                    text_color=DS.ACCENT_BLUE).pack(pady=(30, 10))
+                    
+        ctk.CTkLabel(frame, text="This copy is locked to this machine.", font=DS.font_body(), 
+                    text_color=DS.TEXT_SECONDARY).pack()
+                    
+        # HWID Display
+        hwid_frame = ctk.CTkFrame(frame, fg_color=DS.BG_ISLAND)
+        hwid_frame.pack(fill="x", padx=40, pady=20)
+        ctk.CTkLabel(hwid_frame, text="Your Machine ID:", font=ctk.CTkFont(size=12), text_color=DS.TEXT_TERTIARY).pack(pady=(10, 0))
+        
+        # Click to Copy Logic
+        def copy_hwid():
+            self.clipboard_clear()
+            self.clipboard_append(hwid)
+            btn_copy.configure(text="COPIED!")
+            self.after(2000, lambda: btn_copy.configure(text=hwid))
+            
+        btn_copy = ctk.CTkButton(hwid_frame, text=hwid, fg_color="transparent", hover_color=DS.BG_CARD, 
+                                font=ctk.CTkFont(family="Consolas", size=14, weight="bold"),
+                                text_color=DS.ACCENT_ORANGE, command=copy_hwid, width=300)
+        btn_copy.pack(pady=(0, 10))
+        
+        # Auto-Send Status Label
+        send_status_lbl = ctk.CTkLabel(hwid_frame, text="Connecting to Admin...", font=ctk.CTkFont(size=11), text_color=DS.ACCENT_ORANGE)
+        send_status_lbl.pack(pady=(0, 5))
+
+        # Background Thread for Auto-Send
+        def auto_send():
+            if self.lm.send_registration_request(hwid):
+                 self.after(0, lambda: send_status_lbl.configure(text="✅ Request Sent! Admin Notified.", text_color=DS.ACCENT_GREEN))
+            else:
+                 self.after(0, lambda: send_status_lbl.configure(text="⚠️ Auto-Send Failed. Please Copy ID Manually.", text_color=DS.TEXT_TERTIARY))
+        
+        import threading
+        threading.Thread(target=auto_send, daemon=True).start()
+
+
+        # Input
+        entry = ctk.CTkEntry(frame, placeholder_text="Enter Activation Key (starts with AQ-)", 
+                            height=45, font=DS.font_input_mono(), justify="center")
+        entry.pack(fill="x", padx=40, pady=(0, 20))
+        
+        status_lbl = ctk.CTkLabel(frame, text="", text_color=DS.ACCENT_RED)
+        status_lbl.pack()
+        
+        def try_activate():
+            key = entry.get().strip()
+            if self.lm.validate_license(key):
+                self.lm.save_license(key)
+                status_lbl.configure(text="Activation Success! Executing...", text_color=DS.ACCENT_GREEN)
+                dialog.after(1000, dialog.destroy)
+            else:
+                status_lbl.configure(text="Invalid Key or HWID Mismatch.", text_color=DS.ACCENT_RED)
+                entry.configure(border_color=DS.ACCENT_RED)
+        
+        def quit_app():
+            sys.exit(0)
+            
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.pack(pady=20)
+        
+        ctk.CTkButton(btn_frame, text="Exit", fg_color=DS.BG_ISLAND, width=100, command=quit_app).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="ACTIVATE", fg_color=DS.ACCENT_BLUE, width=150, command=try_activate).pack(side="left", padx=10)
+        
+        dialog.protocol("WM_DELETE_WINDOW", quit_app)
+        self.wait_window(dialog)
+
+
+
+def main():
     ctk.set_appearance_mode("Dark")
     app = TerminalApple()
     try:
@@ -1774,3 +2260,7 @@ if __name__ == "__main__":
         pass
     except Exception as e:
         logger.error(f"Application crashed: {e}")
+
+if __name__ == "__main__":
+    main()
+

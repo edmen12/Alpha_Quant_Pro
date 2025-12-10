@@ -1,5 +1,5 @@
 #define MyAppName "Alpha Quant Pro"
-#define MyAppVersion "1.3.5"
+#define MyAppVersion "2.1.1"
 #define MyAppPublisher "Alpha Quant"
 #define MyAppURL "https://github.com/edmen12/Alpha_Quant_Pro"
 #define MyAppExeName "AlphaQuantPro.exe"
@@ -34,8 +34,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; Copy everything from dist/AlphaQuantPro to {app}
-Source: "dist\AlphaQuantPro\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "C:\Users\User\Desktop\trading_terminal\dist\AlphaQuantPro\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\User\Desktop\trading_terminal\dist\AlphaQuantPro\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

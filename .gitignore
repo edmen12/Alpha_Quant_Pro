@@ -10,6 +10,13 @@ Installer/
 *.spec
 !AlphaQuantPro.spec
 
+# Security & Keys (CRITICAL)
+keygen.py
+keygen_gui.py
+license.key
+key.txt
+secret.key
+
 # Logs
 *.log
 *_log.txt

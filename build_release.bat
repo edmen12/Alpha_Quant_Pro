@@ -6,11 +6,11 @@ echo.
 
 echo [1/5] Cleaning previous build artifacts...
 rmdir /s /q build dist
-del *.spec
+REM del *.spec
 
 echo.
-echo [2/5] Generating Spec File...
-python write_spec.py
+echo [2/5] Using Existing Spec File...
+REM python write_spec.py
 if %errorlevel% neq 0 goto :error
 
 echo.
@@ -20,8 +20,8 @@ if %errorlevel% neq 0 goto :error
 
 echo.
 echo [4/5] Patching Tkinter Dependencies...
-python copy_tkinter_deps.py
-if %errorlevel% neq 0 goto :error
+REM python copy_tkinter_deps.py
+REM if %errorlevel% neq 0 goto :error
 
 echo.
 echo [5/5] Compiling Installer with Inno Setup...

@@ -78,6 +78,9 @@ class TradingEngine:
         self.mt5_timeframe = self._get_mt5_timeframe(timeframe)
         
         self.callback_status = callback_status
+        
+        self.ai_status = "AI Initializing..." # AI Status Message
+        
         self.running = False
         self.magic_number = 123456
         self.deviation = 20
@@ -319,6 +322,26 @@ class TradingEngine:
             self.log(f"Account: {account_info.login} | Server: {account_info.server}")
         return True
 
+    async def get_analytics(self):
+        """
+        Get analytics data from PerformanceAnalyzer (Async wrapper)
+        """
+        try:
+            # Refresh if needed
+            if time.time() - self.last_analytics_time > self.analytics_cache_ttl:
+                # Run heavy calc in executor
+                data = await self._run_blocking(self.performance_analyzer.get_analytics)
+                self.analytics_cache = data
+                self.last_analytics_time = time.time()
+                return data
+            return self.analytics_cache or {
+                "metrics": {},
+                "curve": {'times': [], 'equity': []}
+            }
+        except Exception as e:
+            self.log(f"Analytics Error: {e}")
+            return {"metrics": {}, "curve": {'times': [], 'equity': []}}
+            
     def get_daily_pnl(self, symbol=None):
         """Calculate total PnL for the current day (Realized + Floating)"""
         now = datetime.now()
@@ -1027,12 +1050,15 @@ class TradingEngine:
         logger.info("Starting run_async loop...")
         try:
             # Connect (Blocking is fine here, once)
+            self.ai_status = "Connecting to MT5..."
             logger.info("Connecting to MT5...")
             if not await self._run_blocking(self.connect_mt5):
                 logger.info("MT5 Connection Failed. Exiting run_async.")
+                self.ai_status = "Connection Failed"
                 return
 
             # Reconcile State (Blocking is fine here)
+            self.ai_status = "Syncing Positions..."
             logger.info("Reconciling State...")
             await self._run_blocking(self._reconcile_state)
 
@@ -1059,6 +1085,7 @@ class TradingEngine:
                             continue
                     
                     # Global Risk Checks
+                    self.ai_status = "Checking Risk..."
                     if not await self.check_risk_limits():
                         self.running = False
                         break
@@ -1092,6 +1119,8 @@ class TradingEngine:
                             if current_bar_time != last_bar_times[symbol]:
                                 self.log(f"[{symbol}] New Bar: {datetime.fromtimestamp(current_bar_time)}")
                                 last_bar_times[symbol] = current_bar_time
+                                
+                                self.ai_status = f"Analyzing {symbol}..."
                                 
                                 # Fetch data for model (Increased to 1000 for long-period indicators)
                                 df_hist = await self._run_blocking(self.get_history, 1000, symbol)
@@ -1141,7 +1170,9 @@ class TradingEngine:
                                             # Filter: News
                                             if not self.news_calendar.is_trading_allowed():
                                                 self.log(f"[{symbol}] Signal {output.signal} ignored. High Impact News.")
+                                                self.ai_status = "News Event - Trading Paused"
                                             else:
+                                                self.ai_status = f"Executing {output.signal} on {symbol}"
                                                 # Execute Logic
                                                 if output.signal == "BUY":
                                                     if pos_dir == -1:
@@ -1189,8 +1220,24 @@ class TradingEngine:
                             "profit": current_pnl, # Mapped to 'profit' for Dashboard
                             "total_profit": total_profit,
                             "history": trades, # Mapped to 'history' for Dashboard Trade List
-                            "chart_data": df_ui # Raw candles for potential chart use
+                            "chart_data": df_ui, # Raw candles for potential chart use
+                            "ai_status": self.ai_status # AI Status Message
                         }
+                        
+                        # EXPOSE DATA FOR WEB SERVER (Fixes 0.00 Issue)
+                        if account:
+                            self.last_equity = account.equity
+                            self.last_balance = account.balance
+                        self.last_pnl = current_pnl  # Floating PnL
+                        self.last_daily_pnl = current_pnl 
+                        self.last_total_profit = total_profit
+                        
+                        # Fix Web Dashboard Open Positions (Must cache list)
+                        self.open_positions_cache = positions
+                        
+                        self.last_price = current_price
+                        self.last_confidence = self.last_confs.get(primary_symbol, 0.0)
+                        
                         # Run callback in main thread (UI thread) usually, but here we are in async thread.
                         self.callback_status(status)
 

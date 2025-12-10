@@ -58,6 +58,7 @@ Alpha Quant Pro is an advanced algorithmic trading terminal designed for MetaTra
 
 ### 🧠 Smart Entry & Exit
 - **AI Confirmation**: Uses the `The_Alpha_v1` model to validate entries based on price action and macro data.
+- **AI Status Visibility**: The dashboard now displays exactly what the AI is "thinking" in plain English (e.g., "Analyzing XAUUSD...", "Checking Risk..."), removing the "black box" guess work.
 - **Trailing Stops**: Automatically moves Stop Loss to break-even and then follows the price to lock in profits.
 - **Partial Close**: Takes 50% profit at the first target (TP1) to secure gains early.
 
