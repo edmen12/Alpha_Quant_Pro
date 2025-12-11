@@ -1,188 +1,107 @@
-# Alpha Quant Trading Terminal
+# Alpha Quant Pro 2.0 (Trading Terminal)
 
-**完全自包含的专业级自动交易终端** - 支持 MetaTrader 5 实盘/模拟交易。
+![Version](https://img.shields.io/badge/version-2.1.1-blue.svg) ![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-blue.svg) ![Tech](https://img.shields.io/badge/tech-Python_%7C_Next.js_%7C_MT5-green.svg)
 
-**✨ 特色：整个文件夹可以随意移动到任何位置，无需修改配置！**
+**Alpha Quant Pro** 是一个专业级、自包含的量化交易终端，专为 MetaTrader 5 (MT5) 设计。它结合了现代化的桌面 UI、强大的 AI 代理架构和远程 Web 监控能力，为您提供全方位的自动交易解决方案。
 
-## 🚀 快速启动
+---
 
-### 方式一：直接运行源码 (推荐开发者)
-```bash
-cd trading_terminal
-python terminal_apple.py
+## ✨ 核心特性 (Key Features)
+
+### 🖥️ 桌面终端 (Desktop Terminal)
+*   **iOS 风格现代化 UI**: 基于 CustomTkinter 的玻璃拟态设计，操作丝滑流畅。
+*   **实时图表**: 内置高性能 K 线图表，支持缩放、拖拽和实时价格更新。
+*   **Agent 管理**: 一键加载/切换不同的 AI 策略包 (Agent Bundles)，无需重启。
+*   **风险风控**: 内置 "Risk Guard" 守护进程，强制执行止损和最大回撤限制。
+
+### 🌐 Web 仪表盘 (Web Dashboard)
+*   **远程监控**: 通过手机或浏览器随时随地查看账户状态 (`/dashboard`)。
+*   **移动端适配**: 完美适配 iOS/Android 移动端操作。
+*   **无需公网 IP**: 集成 **Ngrok** 隧道，一键开启远程访问，无需配置路由器。
+*   **安全认证**: 强制 Token 验证 + SHA-256 密码哈希，保障账户安全。
+*   **全功能控制**: 支持远程启动/停止引擎、修改参数、查看历史订单。
+
+### 🤖 智能架构 (Smart Architecture)
+*   **插件化策略**: 策略被打包为独立的 `Agent Bundle`，包含独立的 Python 环境和依赖，互不冲突。
+*   **热更新**: 支持在运行时动态重新加载策略模型。
+*   **Telegram 集成**: 实时推送交易信号、成交通知和账户日报。
+
+---
+
+## � 安装与启动 (Installation)
+
+### 方式一：安装包 (推荐)
+1. 下载最新发布的 `AlphaQuantPro_Setup.exe`。
+2. 运行安装程序，按照提示完成安装。
+3. 桌面会出现快捷方式，双击即可运行。
+
+### 方式二：绿色版 (Portable)
+1. 解压 `AlphaQuantPro_Portable.zip` (或 `dist_v2/AlphaQuantPro` 目录)。
+2. 直接运行文件夹内的 `AlphaQuantPro.exe`。
+3. **可移植性**: 整个文件夹可以移动到任何位置（如 U 盘），配置和数据随身携带。
+
+---
+
+## 📖 使用指南 (User Guide)
+
+### 1. 初始配置
+1.  **准备 MT5**: 确保本机已安装 MetaTrader 5 并登录账户。
+2.  **启用 Algo**: 在 MT5 中点击 "Algo Trading" (允许算法交易)，并在选项中勾选 "Allow DLL imports"。
+3.  **启动终端**: 运行 Alpha Quant Pro。
+
+### 2. 加载策略
+1.  在左侧 "Agent Selection" 下拉菜单中选择一个策略包（如 `agent_bundle_alpha_v2`）。
+2.  设置交易品种 (Symbol，默认 `XAUUSD`)。
+3.  点击 **"▶ START TRADING"** 按钮。
+
+### 3. 配置远程访问 (可选)
+1.  进入 **"Settings"** 页面。
+2.  设置 **"Web Password"** (远程访问密码)。
+3.  开启 **"Remote Dashboard"** 开关。
+4.  (推荐) 开启 **"Ngrok Tunnel"** 并输入您的 Ngrok Auth Token。
+5.  在 **"Logs"** 页面查看生成的公网访问链接。
+
+### 4. Telegram 通知 (可选)
+1.  在 Settings 页面填入您的 `Bot Token` 和 `Chat ID`。
+2.  点击 "Test" 测试发送一条消息。
+3.  保存配置，即可接收实时交易推送。
+
+---
+
+## � 目录结构
+
 ```
-
-### 方式二：运行安装包 (推荐用户)
-下载并安装 `AlphaQuantPro_Setup.exe`，直接运行桌面快捷方式。
-
-## 📁 文件结构
-
-```
-trading_terminal/           # 📦 完全独立的交易终端
-├── agents/                 # 🤖 Agent Bundle 存储目录
-│   ├── agent_bundle_xxx/   # 👈 您的策略包放在这里
-│   ├── ...
-│
-├── core/                   # 🏗️ 核心架构模块
-│   ├── web_server.py      # 🌐 Web 监控后端
+AlphaQuantPro/
+├── AlphaQuantPro.exe      # 主程序
+├── Guardian.exe           # 守护进程 (防崩溃/风控)
+├── web_ui/                # Web Dashboard 前端资源
+├── agents/                # 策略包存放目录 (放入新的 bundle 即可识别)
+│   ├── agent_bundle_v1/
 │   └── ...
-│
-├── engine_core.py         # ⚙️ 交易引擎核心
-├── terminal_apple.py      # 🍎 主程序（iOS 风格 GUI）
-├── terminal_lite.py       # 🚀 Lite 版（VPS 专用 - 开发中）
-└── README.md              # 📖 本文件
+├── workspace/             # 数据存储 (数据库、日志、配置)
+│   ├── terminal_config.json
+│   ├── AlphaQuant.log
+│   └── ...
+└── _internal/             # Python 运行时环境 (依赖库)
 ```
-
-## ✨ 主要功能
-
-### 1. 🍎 iOS 风格界面
-- 采用 CustomTkinter 构建的现代化 UI
-- 玻璃拟态 (Glassmorphism) 设计
-- 丝滑的动画效果
-
-### 2. 🌐 远程 Web 监控 (v1.4.0 新增)
-- **手机随时查看**: 在手机浏览器访问 `http://<VPS_IP>:8000`
-- **远程控制**: 远程启动/停止交易引擎
-- **全功能配置**: 远程修改所有参数 (品种、风控、Telegram 等)
-- **安全**: 强制密码验证 + Token 认证
-
-### 3. 📊 实时 K 线图表
-- 专业蜡烛图显示
-- 自动更新（3秒间隔）
-
-### 4. 💰 账户监控
-- 实时余额/净值
-- 浮动盈亏（颜色编码）
-
-### 5. 📱 Telegram 通知
-- 新信号推送
-- 交易执行提醒
-
-### 4. 🤖 Agent Bundle 系统
-- 动态加载各种策略
-- 自动管理依赖
-- 向后兼容旧格式
-- **[📚 查看详细开发指南 (AGENT_BUNDLE_GUIDE.md)](AGENT_BUNDLE_GUIDE.md)**
-
-### 5. 📋 交易历史
-- 完整交易记录
-- 时间/价格/盈亏
-
-## 🔧 配置步骤
-
-### 1. 准备 MT5
-1. 安装 MetaTrader 5
-2. 登录账户
-3. 启用算法交易：
-   - 工具 → 选项 → 专家顾问
-   - ✅ 允许算法交易
-
-### 2. 配置 Telegram（可选）
-1. 创建 Bot：
-   - 搜索 @BotFather
-   - 发送 `/newbot`
-   - 获取 Bot Token
-
-2. 获取 Chat ID：
-   - 向 Bot 发消息
-   - 搜索 @userinfobot
-   - 获取 Chat ID
-
-3. 在终端中配置：
-   - 切换到"⚙️ Advanced"标签
-   - 填写 Token 和 Chat ID
-   - 点击"测试连接"
-
-### 3. 选择 Agent
-1. 在下拉菜单选择策略（如 `agent_bundle_alpha_35`）
-2. 设置品种（默认 XAUUSD）
-3. 设置手数（建议 0.01）
-4. 点击 "▶ START TRADING"
-
-## 📦 依赖项
-
-```
-customtkinter
-MetaTrader5
-matplotlib
-pandas
-numpy
-requests  # For Telegram
-```
-
-## Agent Bundle 位置
-
-Agent bundles 应放在：
-```
-../New_model/agent_bundle_xxx/
-```
-
-## ⚠️ 重要提示
-
-1. **首次使用请用模拟账户测试**
-2. **最小手数从 0.01 开始**
-3. **确保网络稳定（用于 Telegram 和 yfinance）**
-4. **定期检查日志标签页**
-
-## 🆘 故障排查
-
-### 问题：MT5 连接失败
-- ✅ 确认 MT5 已打开
-- ✅ 确认已登录账户
-- ✅ 重启 MT5
-
-### 问题：Agent 加载失败
-- ✅ 检查 bundle 路径是否正确
-- ✅ 查看日志标签页错误信息
-- ✅ 确认 requirements.txt 中的依赖已安装
-
-### 问题：Telegram 无法发送
-- ✅ 检查 Token 和 Chat ID 是否正确
-- ✅ 向 Bot 发送过消息激活
-- ✅ 检查网络连接
-
-## 📞 技术支持
-
-遇到问题请查看：
-- 系统日志（📝 System Logs 标签页）
-- Agent Bundle README
-- MT5 专家日志
 
 ---
 
-## 📦 安装说明 (v1.4.0)
+## 🔐 安全说明
 
-由于 GitHub 文件大小限制，安装包被分为两部分。请按照以下步骤安装：
-
-1.  **下载所有 3 个文件** (从 Releases 页面)：
-    - `AlphaQuantPro_Setup.part1`
-    - `AlphaQuantPro_Setup.part2`
-    - `MERGE_INSTALLER.bat`
-2.  **将它们放在同一个文件夹中**。
-3.  **双击运行** `MERGE_INSTALLER.bat`。
-    - 脚本会自动合并生成 `AlphaQuantPro_Setup.exe`。
-4.  **运行** 生成的 `AlphaQuantPro_Setup.exe` 进行安装。
-
-## ⚠️ 关于 Agent Bundles
-
-出于商业机密保护，本仓库**不包含**核心策略模型 (`agents/` 和 `models/` 目录)。
-请联系管理员获取授权的策略包，并将其放入安装目录下的 `agents/` 文件夹中。
+*   **本地运行**: 所有交易逻辑仅在您本地电脑运行，私钥和 API Key 不会上载云端。
+*   **Web 安全**: 远程访问仅通过加密隧道传输，且所有敏感操作均需密码验证。
+*   **开源透明**: 核心架构代码在 GitHub 可见，无后门。
 
 ---
 
-**版本**: 2.1.1
-**最后更新**: 2025-12-12
+## ⚠️ 免责声明 (Disclaimer)
 
-## 🚀 v2.1.1 更新日志 (Latest)
-- **Web Dashboard 增强**:
-  - ✅ 修复了 Ngrok "Endpoint already online" 错误（添加强制清理进程）
-  - ✅ History 页面添加自动刷新 (每5秒轮询)
-  - ✅ 修复 History 最新订单缺失问题 (时区修正)
-  - ✅ 移除订单品种过滤 (显示所有后缀品种)
-  - ✅ 修复 Dashboard 401 自动登出刷新机制
-- **UX 改进**:
-  - ✅ 登录页全新 UI (Alpha Logo)
-  - ✅ 移除冗余的 "Test Connection" 按钮
-  - ✅ 完善 Settings 页面所有配置项
-- **安装包**:
-  - ✅ 解决构建文件锁问题，使用 `dist_v2` 生成最终发布包
+本软件仅供教育和研究使用。
+*   **高风险**: 外汇和差价合约交易存在高风险，可能导致资金损失。
+*   **无建议**: 本软件不构成任何投资建议。
+*   **责任**: 用户需自行承担使用本软件产生的所有风险和结果。
+
+---
+
+Copyright © 2025 Alpha Quant Pro. All Rights Reserved.
