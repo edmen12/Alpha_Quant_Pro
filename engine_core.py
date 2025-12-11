@@ -478,6 +478,8 @@ class TradingEngine:
                         'open_price': open_price,
                         'close_price': d.price,
                         'profit': d.profit,
+                        'commission': d.commission,
+                        'swap': d.swap,
                         'comment': d.comment
                     })
             # Sort by time desc
@@ -1191,6 +1193,29 @@ class TradingEngine:
                                                     elif pos_dir == 0:
                                                         self.log(f"[{symbol}] Opening Short Position")
                                                         await self._run_blocking(self.execute_trade, symbol, "SELL", sl=output.sl, tp=output.tp)
+
+                                    # Update SL on HOLD (Agent-Driven Trailing Stop)
+                                    elif output.signal == "HOLD" and output.sl is not None and output.sl > 0 and pos_dir != 0:
+                                        # Use Agent's SL if it's an improvement (Ratchet)
+                                        # Note: We need to find the specific ticket(s) for this symbol
+                                        open_positions = await self._run_blocking(self.get_open_positions, symbol)
+                                        for pos in open_positions:
+                                            new_sl = output.sl
+                                            
+                                            # Validate Ratchet (Improvement Only)
+                                            should_update = False
+                                            if pos['type'] == "BUY":
+                                                 # For BUY: New SL must be HIGHER than current SL
+                                                 if pos['sl'] == 0 or new_sl > pos['sl']:
+                                                     should_update = True
+                                            elif pos['type'] == "SELL":
+                                                 # For SELL: New SL must be LOWER than current SL
+                                                 if pos['sl'] == 0 or new_sl < pos['sl']:
+                                                     should_update = True
+                                            
+                                            if should_update:
+                                                self.log(f"[{symbol}] Agent-Driven SL Update: {pos['sl']} -> {new_sl}")
+                                                await self._run_blocking(self._modify_position_sl, pos['ticket'], new_sl, symbol)
                     
                     # 5. Callback Update (UI) - Once per loop iteration (updates with global state)
                     if self.callback_status:
@@ -1267,3 +1292,47 @@ class TradingEngine:
             "D1": mt5.TIMEFRAME_D1
         }
         return mapping.get(tf_str, mt5.TIMEFRAME_M15)
+
+    async def get_recent_data(self, symbol, timeframe=None, count=100):
+        """Fetch recent candle data for a symbol"""
+        try:
+            # If not running and path not set, we can't fetch. 
+            # But if mt5_path is set (even if not running loop), we might be able to fetch if connected.
+            # self.running is for the LOOP. MT5 connection might be active.
+            
+            tf = self._get_mt5_timeframe(timeframe) if timeframe else self.mt5_timeframe
+            
+            # Use executor for MT5 call
+            loop = asyncio.get_event_loop()
+            rates = await loop.run_in_executor(None, self._mt5_copy_rates, symbol, tf, count)
+            
+            if rates is None or len(rates) == 0:
+                return []
+                
+            # Convert to list of dicts
+            data = []
+            for rate in rates:
+                data.append({
+                    "time": int(rate['time']), # Unix timestamp
+                    "open": float(rate['open']),
+                    "high": float(rate['high']),
+                    "low": float(rate['low']),
+                    "close": float(rate['close']),
+                    "volume": float(rate['tick_volume'])
+                })
+            return data
+        except Exception as e:
+            self.log(f"Data Fetch Error: {e}")
+            return []
+
+    def _mt5_copy_rates(self, symbol, tf, count):
+        with self.mt5_lock:
+             import MetaTrader5 as mt5 
+             # Ensure connected
+             if not mt5.terminal_info():
+                 if self.mt5_path:
+                    mt5.initialize(path=self.mt5_path)
+                 else:
+                    mt5.initialize()
+                    
+             return mt5.copy_rates_from_pos(symbol, tf, 0, count)

@@ -775,7 +775,10 @@ class ViewAgents(ctk.CTkFrame):
         self.card.pack(fill="x")
         
         self._create_bundle_selector(self.card)
+        self._add_desc(self.card, "Select the AI agent bundle containing your trained model, feature config, and strategy rules.")
+        
         self.symbol_entry = self._create_input_row(self.card, "Symbols (comma sep)", "XAUUSD")
+        self._add_desc(self.card, "Trading symbols to monitor. Use comma to separate multiple symbols (e.g., XAUUSD,EURUSD).")
         
         # Timeframe Selector
         tf_row = ctk.CTkFrame(self.card, fg_color="transparent")
@@ -785,6 +788,7 @@ class ViewAgents(ctk.CTkFrame):
         self.timeframe_menu = ctk.CTkOptionMenu(tf_row, variable=self.timeframe_var, values=["M1", "M5", "M15", "M30", "H1", "H4", "D1"], 
                                                 fg_color=DS.BG_ISLAND, button_color=DS.ACCENT_BLUE, width=100)
         self.timeframe_menu.pack(side="right")
+        self._add_desc(self.card, "Chart timeframe for analysis. Lower timeframes = more trades but more noise. M15 is recommended for most strategies.")
         
         mode_row = ctk.CTkFrame(self.card, fg_color="transparent")
         mode_row.pack(fill="x", padx=20, pady=(15, 5))
@@ -796,14 +800,21 @@ class ViewAgents(ctk.CTkFrame):
         self.mode_seg.pack(side="right")
         
         self.lot_row, self.lot_entry = self._create_input_row(self.card, "Lot Size", "0.01", return_row=True)
+        self._add_desc(self.card, "Fixed position size per trade. 0.01 lot = 1 micro lot = $0.01/pip for XAUUSD.")
+        
         self.risk_row, self.risk_entry = self._create_input_row(self.card, "Risk %", "1.0", return_row=True)
+        self._add_desc(self.card, "Percentage of account equity to risk per trade. Position size will be calculated dynamically based on stop loss distance.")
+        
         self._update_inputs("Fixed Lot")
         
         self.max_spread_entry = self._create_input_row(self.card, "Smart Entry (Max Spread)", "500")
-        self._add_desc(self.card, "Maximum allowed spread in points to enter a trade.")
+        self._add_desc(self.card, "Only enter trades when spread is below this threshold (in points). High spreads during volatile periods or low liquidity can significantly impact entry price and reduce profitability. Recommended: 30-50 for major pairs, 100-200 for gold.")
         
         self.max_loss_entry = self._create_input_row(self.card, "Max Daily Loss", "500")
+        self._add_desc(self.card, "Maximum allowed daily loss in account currency. When reached, all positions will be closed and trading will stop until next day.")
+        
         self.min_equity_entry = self._create_input_row(self.card, "Min Equity (Guard)", "0")
+        self._add_desc(self.card, "Emergency equity floor. If account equity drops below this value, all positions will be immediately closed to prevent further losses.")
         
         news_row = ctk.CTkFrame(self.card, fg_color="transparent")
         news_row.pack(fill="x", padx=20, pady=15)
@@ -811,7 +822,7 @@ class ViewAgents(ctk.CTkFrame):
         self.news_filter_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(news_row, text="Enable", variable=self.news_filter_var, fg_color=DS.ACCENT_BLUE).pack(side="right")
         self.news_buffer_entry = self._create_input_row(self.card, "News Buffer (min)", "30")
-        self._add_desc(self.card, "Pause trading before/after high-impact news events.")
+        self._add_desc(self.card, "Time buffer in minutes before and after high-impact economic news events (NFP, CPI, FOMC). During this window, new trades are blocked to avoid volatility spikes and unpredictable price movements. Set to 0 to disable time-based filtering.")
         
         trailing_row = ctk.CTkFrame(self.card, fg_color="transparent")
         trailing_row.pack(fill="x", padx=20, pady=15)
@@ -819,7 +830,7 @@ class ViewAgents(ctk.CTkFrame):
         self.trailing_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(trailing_row, text="Enable", variable=self.trailing_var, fg_color=DS.ACCENT_GREEN).pack(side="right")
         self.trailing_distance_entry = self._create_input_row(self.card, "Trailing Distance (points)", "50")
-        self._add_desc(self.card, "Move Stop Loss to lock in profits as price moves favorably.")
+        self._add_desc(self.card, "Trailing stop activation distance in points. When price moves in your favor by this amount, stop loss begins following price at this fixed distance. Works like a ratchet - only moves in profitable direction, never backwards. Smaller values = tighter protection but may exit too early on normal retracements.")
         
         partial_row = ctk.CTkFrame(self.card, fg_color="transparent")
         partial_row.pack(fill="x", padx=20, pady=(15, 5))
@@ -827,14 +838,18 @@ class ViewAgents(ctk.CTkFrame):
         self.partial_close_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(partial_row, text="Enable", variable=self.partial_close_var, fg_color=DS.ACCENT_PURPLE).pack(side="right")
         self.tp1_distance_entry = self._create_input_row(self.card, "TP1 Distance (points)", "50")
+        self._add_desc(self.card, "First take-profit target distance from entry in points. When price reaches this level, partial close is triggered.")
+        
         self.partial_close_percent_entry = self._create_input_row(self.card, "Partial Close %", "50")
-        self._add_desc(self.card, "Close a portion of the position at TP1 and move SL to Break Even.")
+        self._add_desc(self.card, "Percentage of position to close at TP1. After partial close, remaining position's stop loss is moved to break-even (entry price), creating a risk-free trade. Example: 50% closes half at TP1, remaining half runs with zero-risk.")
         
         self._create_mt5_selector(self.card)
         self._load_saved_config()
 
     def _add_desc(self, parent, text):
-        ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=11), text_color=DS.TEXT_SECONDARY).pack(anchor="w", padx=20, pady=(0, 5))
+        label = ctk.CTkLabel(parent, text=text, font=ctk.CTkFont(size=11), text_color=DS.TEXT_SECONDARY, 
+                            wraplength=600, justify="left", anchor="w")
+        label.pack(anchor="w", padx=20, pady=(0, 10), fill="x")
 
     def _load_saved_config(self):
         config = ConfigManager.load()
@@ -889,6 +904,7 @@ class ViewAgents(ctk.CTkFrame):
         self.mt5_path_entry = ctk.CTkEntry(row, textvariable=self.mt5_var, width=140, fg_color=DS.BG_MAIN, border_width=1, border_color="#333", font=DS.font_input_mono())
         self.mt5_path_entry.pack(side="right")
         ctk.CTkButton(row, text="...", width=40, fg_color=DS.BG_ISLAND, command=self._select_mt5).pack(side="right", padx=5)
+        self._add_desc(parent, "Path to MetaTrader 5 terminal executable. Use 'auto' for automatic detection (recommended). If you have multiple MT5 installations, click '...' to select the specific terminal64.exe you want to use.")
 
     def _create_input_row(self, parent, label, default, return_row=False):
         row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -1083,11 +1099,7 @@ class ViewSettings(ctk.CTkFrame):
         self.token_entry = self._create_input(self.card, "Bot Token")
         self.chat_entry = self._create_input(self.card, "Chat ID")
 
-        # Telegram Test & Info
-        btn_row = ctk.CTkFrame(self.card, fg_color="transparent")
-        btn_row.pack(fill="x", padx=20, pady=10)
-        self.btn_test = CapsuleButton(btn_row, "Test Connection", color=DS.ACCENT_PURPLE, width=150, command=self._test_tg)
-        self.btn_test.pack(side="left")
+        # Removed: Test Connection button
         
         info_text = "Configuration Guide:\n1. Search @BotFather in Telegram, create a new bot to get Bot Token\n2. Send any message to your bot to activate it\n3. Search @userinfobot in Telegram to get your Chat ID"
         ctk.CTkLabel(self.card, text=info_text, font=DS.font_normal(), text_color=DS.TEXT_SECONDARY, justify="left").pack(anchor="w", padx=20, pady=10)
@@ -1245,6 +1257,7 @@ class ViewSettings(ctk.CTkFrame):
             "telegram_enabled": self.sw_enable.get(),
             "telegram_token": self.token_entry.get(),
             "telegram_chat_id": self.chat_entry.get(),
+            "web_enabled": self.sw_web_enable.get(),
             "web_password": self.web_password_entry.get(),
             "ngrok_enabled": self.sw_ngrok_enable.get(),
             "ngrok_token": self.ngrok_token_entry.get(),
@@ -1595,8 +1608,19 @@ class TerminalApple(ctk.CTk):
         """Stop Ngrok tunnel"""
         try:
             from pyngrok import ngrok
+            # Graceful kill via library
             ngrok.kill()
-            logger.info("Ngrok Tunnel Stopped")
+            
+            # Force kill any lingering system processes
+            import subprocess
+            subprocess.run(["taskkill", "/F", "/IM", "ngrok.exe"], 
+                         stdout=subprocess.DEVNULL, 
+                         stderr=subprocess.DEVNULL)
+            
+            logger.info("Ngrok Tunnel Stopped (Force Cleaned)")
+            # Small delay to allow port release
+            import time
+            time.sleep(1)
         except Exception as e:
             logger.error(f"Failed to stop Ngrok: {e}")
 
@@ -1821,11 +1845,11 @@ class TerminalApple(ctk.CTk):
                                 self.views["agents"].min_equity_entry.delete(0, "end")
                                 self.views["agents"].min_equity_entry.insert(0, str(new_config["min_equity"]))
                             if "trailing_distance" in new_config:
-                                self.views["agents"].trail_dist_entry.delete(0, "end")
-                                self.views["agents"].trail_dist_entry.insert(0, str(new_config["trailing_distance"]))
+                                self.views["agents"].trailing_distance_entry.delete(0, "end")
+                                self.views["agents"].trailing_distance_entry.insert(0, str(new_config["trailing_distance"]))
                             if "partial_close_percent" in new_config:
-                                self.views["agents"].pc_percent_entry.delete(0, "end")
-                                self.views["agents"].pc_percent_entry.insert(0, str(new_config["partial_close_percent"]))
+                                self.views["agents"].partial_close_percent_entry.delete(0, "end")
+                                self.views["agents"].partial_close_percent_entry.insert(0, str(new_config["partial_close_percent"]))
                             
                             # Settings View Vars
                             if "telegram_enabled" in new_config:
@@ -2060,11 +2084,13 @@ class TerminalApple(ctk.CTk):
         dialog.transient(self)
         dialog.grab_set() # Modal
 
-        # Center Dialog
+        # Center Dialog on Screen
         dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - (600 // 2)
-        y = self.winfo_y() + (self.winfo_height() // 2) - (500 // 2)
-        dialog.geometry(f"+{x}+{y}")
+        screen_w = dialog.winfo_screenwidth()
+        screen_h = dialog.winfo_screenheight()
+        x = (screen_w // 2) - (600 // 2)
+        y = (screen_h // 2) - (500 // 2)
+        dialog.geometry(f"600x500+{x}+{y}")
         
         # Content Frame
         frame = ctk.CTkFrame(dialog, fg_color=DS.BG_MAIN)

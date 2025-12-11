@@ -20,8 +20,8 @@ if %errorlevel% neq 0 goto :error
 
 echo.
 echo [4/5] Patching Tkinter Dependencies...
-REM python copy_tkinter_deps.py
-REM if %errorlevel% neq 0 goto :error
+python copy_tkinter_deps.py
+if %errorlevel% neq 0 goto :error
 
 echo.
 echo [5/5] Compiling Installer with Inno Setup...

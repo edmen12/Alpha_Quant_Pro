@@ -39,7 +39,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:;"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://esm.sh https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data:;"
     return response
 
 app.add_middleware(
@@ -292,6 +292,7 @@ class AnalyticsResponse(BaseModel):
     max_drawdown: float
     total_trades: int
     avg_duration: float
+    total_profit: float = 0.0
     equity_curve: dict # {'times': [], 'equity': []}
 
 @app.get("/api/analytics", response_model=AnalyticsResponse, dependencies=[Depends(verify_token)])
@@ -336,6 +337,7 @@ async def get_analytics():
                 max_drawdown=float(safe_metrics.get('max_drawdown', 0.0)),
                 total_trades=int(safe_metrics.get('total_trades', 0)),
                 avg_duration=float(safe_metrics.get('avg_duration', 0.0)),
+                total_profit=float(safe_metrics.get('total_profit', 0.0)),
                 equity_curve={'times': safe_times, 'equity': safe_equity}
             )
         else:
@@ -417,6 +419,23 @@ async def get_logs():
     except Exception as e:
         logger.error(f"Get Logs Failed: {e}")
         return {"logs": [f"Error reading logs: {str(e)}"]}
+
+@app.get("/api/chart_data", dependencies=[Depends(verify_token)])
+async def get_chart_data(symbol: str = "XAUUSD", timeframe: str = "M15"):
+    global trading_engine
+    if not trading_engine:
+        return {"data": []}
+    
+    try:
+        # Check if method exists
+        if hasattr(trading_engine, 'get_recent_data'):
+            data = await trading_engine.get_recent_data(symbol, timeframe, count=200)
+            return {"data": data}
+        else:
+            return {"data": []}
+    except Exception as e:
+        logger.error(f"Get Chart Data Failed: {e}")
+        return {"data": []}
 
 # Global Server Instance
 server_instance = None

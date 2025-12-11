@@ -6,6 +6,7 @@ __pycache__/
 # Distribution / Packaging
 build/
 dist/
+dist_v2/
 Installer/
 *.spec
 !AlphaQuantPro.spec
@@ -62,4 +63,4 @@ check_paths.py
 check_dlls.py
 verify_spec_paths.py
 verify_build_content.py
-copy_tkinter_deps.py
+verify_build_content.py

@@ -53,7 +53,9 @@ class PerformanceAnalyzer:
                         return []
             
             from_date = datetime.now() - timedelta(days=days)
-            deals = mt5.history_deals_get(from_date, datetime.now())
+            # Use 'tomorrow' as end date to handle Broker Time > Local Time issues
+            to_date = datetime.now() + timedelta(days=1)
+            deals = mt5.history_deals_get(from_date, to_date)
             
             if not deals:
                 return []
@@ -63,8 +65,8 @@ class PerformanceAnalyzer:
                 # Only OUT deals (closing trades)
                 if d.entry == mt5.DEAL_ENTRY_OUT:
                     # Filter by symbol if specified
-                    if self.symbol and d.symbol != self.symbol:
-                        continue
+                    # if self.symbol and d.symbol != self.symbol:
+                    #     continue
                         
                     # Filter out non-trading deals (Balance, Credit, etc.)
                     if d.type not in [0, 1]: # 0=BUY, 1=SELL
@@ -311,7 +313,10 @@ class PerformanceAnalyzer:
         """
         trades = trades_list if trades_list is not None else self.get_trade_history(days)
         
-        # Estimate initial balance
+        # Calculate total profit first as it is needed
+        total_profit = sum(t.get('profit', 0) + t.get('commission', 0) + t.get('swap', 0) for t in trades) if trades else 0.0
+        
+        # Estimate initial balance for Drawdown Calc
         current_balance = 0.0
         try:
             if mt5.terminal_info():
@@ -320,23 +325,33 @@ class PerformanceAnalyzer:
                     current_balance = acct.balance
         except:
             pass
-            
-        total_profit = sum(t['profit'] for t in trades)
-        initial_balance = current_balance - total_profit
         
-        # If we can't get balance, fallback to 0 (which might give 0% DD if starting with loss)
-        # But usually we are connected.
-        
+        initial_balance = current_balance - total_profit if current_balance > 0 else 10000.0 # Fallback
+
         return {
-            'win_rate': self.calculate_win_rate(trades),
-            'profit_factor': self.calculate_profit_factor(trades),
-            'sharpe_ratio': self.calculate_sharpe_ratio(trades),
-            'max_drawdown': self.calculate_max_drawdown(trades, initial_balance),
-            'total_trades': len(trades),
-            'avg_duration': self.calculate_avg_trade_duration(days),
-            'total_profit': total_profit,
-            'avg_profit': np.mean([t['profit'] for t in trades]) if trades else 0.0
+            "win_rate": self.calculate_win_rate(trades),
+            "profit_factor": self.calculate_profit_factor(trades),
+            "sharpe_ratio": self.calculate_sharpe_ratio(trades),
+            "max_drawdown": self.calculate_max_drawdown(trades, initial_balance),
+            "total_trades": len(trades),
+            "avg_duration": self.calculate_avg_trade_duration(days),
+            "total_profit": total_profit,
+            "avg_profit": np.mean([t['profit'] for t in trades]) if trades else 0.0
         }
+
+    def get_analytics(self, days=30):
+        """
+        Get combined analytics data (Metrics + Equity Curve)
+        Used by TradingEngine for Web Dashboard
+        """
+        try:
+            return {
+                "metrics": self.get_all_metrics(days=days),
+                "curve": self.get_equity_curve(days=days)
+            }
+        except Exception as e:
+            logger.error(f"Error calculating analytics: {e}")
+            return {"metrics": {}, "curve": {'times': [], 'equity': []}}
 
 
 if __name__ == "__main__":

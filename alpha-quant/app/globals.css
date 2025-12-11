@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #050505;
+  --foreground: #ffffff;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  /* iOS 26 / VisionOS Deep Space Background */
+  background-image:
+    radial-gradient(circle at 50% -20%, rgba(48, 209, 88, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 100% 50%, rgba(10, 132, 255, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 0% 80%, rgba(191, 90, 242, 0.05) 0%, transparent 40%);
+  min-height: 100vh;
+}
+
+/* Hide TradingView / LightweightCharts Watermark - Aggressive */
+.tv-lightweight-charts a,
+[class*="tv-lightweight-charts"] a,
+[class*="lightweight-charts"] a,
+a[href*="tradingview"],
+a[href*="tradingview.com"],
+div[class*="chart"] a[target="_blank"],
+/* Target the specific watermark container */
+div[style*="position: absolute"][style*="z-index"][style*="bottom"] a {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* iOS 26 Enhanced Glassmorphism */
+  .glass-panel {
+    @apply bg-[#1c1c1e]/60 backdrop-blur-[40px] border border-white/[0.06] rounded-3xl;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    backdrop-filter: blur(40px) saturate(180%);
+  }
+
+  .glass-input {
+    @apply bg-black/30 border border-white/[0.08] backdrop-blur-sm rounded-xl;
+  }
+
+  /* iOS 26 Glow Effects */
+  .shadow-glow-green {
+    box-shadow: 0 0 20px rgba(48, 209, 88, 0.15), 0 0 40px rgba(48, 209, 88, 0.08);
+  }
+
+  .shadow-glow-red {
+    box-shadow: 0 0 20px rgba(255, 69, 58, 0.15), 0 0 40px rgba(255, 69, 58, 0.08);
+  }
+
+  .shadow-glow-blue {
+    box-shadow: 0 0 20px rgba(10, 132, 255, 0.15), 0 0 40px rgba(10, 132, 255, 0.08);
+  }
+}
