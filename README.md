@@ -1,4 +1,4 @@
-# Alpha Quant Pro 2.0 (Trading Terminal)
+# Alpha Quant Pro 2.1.1 (Trading Terminal)
 
 ![Version](https://img.shields.io/badge/version-2.1.1-blue.svg) ![Platform](https://img.shields.io/badge/platform-Windows_10%2F11-blue.svg) ![Tech](https://img.shields.io/badge/tech-Python_%7C_Next.js_%7C_MT5-green.svg)
 
